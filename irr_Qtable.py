@@ -12,7 +12,7 @@ from irrigation_env import IrrigationEnv
 # 1. STATE DISCRETIZATION
 # ============================================================================
 
-def discretize_state(observation, n_soil_bins=12, n_et0_bins=5, n_rain_bins=5):
+def discretize_state(observation, n_soil_bins=12):
     """
     Convert continuous observation to discrete state index.
     
@@ -22,10 +22,6 @@ def discretize_state(observation, n_soil_bins=12, n_et0_bins=5, n_rain_bins=5):
         Environment observation with keys: soil_moisture, crop_stage, rain, et0
     n_soil_bins : int
         Number of bins for soil moisture [0, 1]
-    n_et0_bins : int
-        Number of bins for ET0 [0, 1]
-    n_rain_bins : int
-        Number of bins for rain [0, 1]
     
     Returns
     -------
@@ -38,32 +34,31 @@ def discretize_state(observation, n_soil_bins=12, n_et0_bins=5, n_rain_bins=5):
     rain = np.clip(observation['rain'][0], 0.0, 1.0)
     et0 = np.clip(observation['et0'][0], 0.0, 1.0)
     
-    # Discretize continuous variables
+    # Discretize soil moisture into bins
     soil_bin = int(soil_moisture * n_soil_bins)
     if soil_bin >= n_soil_bins:
         soil_bin = n_soil_bins - 1
     
-    et0_bin = int(et0 * n_et0_bins)
-    if et0_bin >= n_et0_bins:
-        et0_bin = n_et0_bins - 1
+    # Binary ET₀: 0 = low, 1 = high (threshold at 0.5)
+    et0_bin = 1 if et0 >= 0.5 else 0
     
-    rain_bin = int(rain * n_rain_bins)
-    if rain_bin >= n_rain_bins:
-        rain_bin = n_rain_bins - 1
+    # Binary rain: 0 = no rain, 1 = rain (threshold at 0.1)
+    rain_bin = 1 if rain >= 0.1 else 0
     
     # Combine into single state index
     # State = (soil_bin, crop_stage, et0_bin, rain_bin)
+    # ET₀ and rain are now binary (2 states each)
     state_index = (
-        soil_bin * (3 * n_et0_bins * n_rain_bins) +
-        crop_stage * (n_et0_bins * n_rain_bins) +
-        et0_bin * n_rain_bins +
+        soil_bin * (3 * 2 * 2) +
+        crop_stage * (2 * 2) +
+        et0_bin * 2 +
         rain_bin
     )
     
     return state_index
 
 
-def get_state_space_size(n_soil_bins=12, n_et0_bins=5, n_rain_bins=5, n_crop_stages=3):
+def get_state_space_size(n_soil_bins=12, n_crop_stages=3):
     """
     Calculate total number of discrete states.
     
@@ -72,7 +67,8 @@ def get_state_space_size(n_soil_bins=12, n_et0_bins=5, n_rain_bins=5, n_crop_sta
     n_states : int
         Total number of discrete states
     """
-    return n_soil_bins * n_crop_stages * n_et0_bins * n_rain_bins
+    # ET₀ and rain are binary (2 states each)
+    return n_soil_bins * n_crop_stages * 2 * 2
 
 
 # ============================================================================
@@ -189,8 +185,6 @@ def train_q_learning(
     epsilon_end=0.01,
     epsilon_decay=0.995,
     n_soil_bins=12,
-    n_et0_bins=5,
-    n_rain_bins=5,
 ):
     """
     Train Q-learning agent on irrigation environment.
@@ -213,10 +207,6 @@ def train_q_learning(
         Epsilon decay rate per episode
     n_soil_bins : int
         Number of bins for soil moisture discretization
-    n_et0_bins : int
-        Number of bins for ET0 discretization
-    n_rain_bins : int
-        Number of bins for rain discretization
     
     Returns
     -------
@@ -224,7 +214,7 @@ def train_q_learning(
         Trained Q-table
     """
     # Initialize Q-table
-    n_states = get_state_space_size(n_soil_bins, n_et0_bins, n_rain_bins)
+    n_states = get_state_space_size(n_soil_bins)
     Q = initialize_q_table(n_states, N_ACTIONS)
     
     # Epsilon for exploration
@@ -234,7 +224,7 @@ def train_q_learning(
     for episode in range(n_episodes):
         # Reset environment
         observation, info = env.reset()
-        state = discretize_state(observation, n_soil_bins, n_et0_bins, n_rain_bins)
+        state = discretize_state(observation, n_soil_bins)
         done = False
         
         # Episode loop
@@ -247,7 +237,7 @@ def train_q_learning(
             done = terminated or truncated
             
             # Discretize next state
-            next_state = discretize_state(observation, n_soil_bins, n_et0_bins, n_rain_bins)
+            next_state = discretize_state(observation, n_soil_bins)
             
             # Update Q-table
             q_learning_update(Q, state, action_index, reward, next_state, done, alpha, gamma)
@@ -285,8 +275,6 @@ if __name__ == "__main__":
         epsilon_end=0.01,
         epsilon_decay=0.995,
         n_soil_bins=12,
-        n_et0_bins=5,
-        n_rain_bins=5,
     )
     
     print("Q-learning training complete")
