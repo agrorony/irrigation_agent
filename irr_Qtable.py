@@ -185,6 +185,7 @@ def train_q_learning(
     epsilon_end=0.01,
     epsilon_decay=0.995,
     n_soil_bins=12,
+    Q_init=None,
 ):
     """
     Train Q-learning agent on irrigation environment.
@@ -207,15 +208,20 @@ def train_q_learning(
         Epsilon decay rate per episode
     n_soil_bins : int
         Number of bins for soil moisture discretization
+    Q_init : np.ndarray, optional
+        Initial Q-table to continue training from. If None, initializes new table.
     
     Returns
     -------
     Q : np.ndarray
         Trained Q-table
     """
-    # Initialize Q-table
-    n_states = get_state_space_size(n_soil_bins)
-    Q = initialize_q_table(n_states, N_ACTIONS)
+    # Initialize or use provided Q-table
+    if Q_init is None:
+        n_states = get_state_space_size(n_soil_bins)
+        Q = initialize_q_table(n_states, N_ACTIONS)
+    else:
+        Q = Q_init.copy()
     
     # Epsilon for exploration
     epsilon = epsilon_start
