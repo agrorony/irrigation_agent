@@ -82,6 +82,9 @@ class IrrigationEnv(gym.Env):
         # Kc values: emergence (low), flowering (high), maturity (medium)
         self.kc_by_stage = np.array([0.5, 1.15, 0.7])
         
+        # Reward function parameters
+        self.water_cost = 0.1  # Cost per mm of irrigation applied
+        
         # Define observation space using Dict for clarity
         self.observation_space = spaces.Dict({
             "soil_moisture": spaces.Box(
@@ -231,6 +234,38 @@ class IrrigationEnv(gym.Env):
             "et0": np.array([et0_norm], dtype=np.float32),
         }
     
+    def _calculate_reward(self, action: int) -> float:
+        """
+        Calculate reward signal for the current step.
+        
+        Reward components:
+        1. Water stress penalty: penalizes soil_moisture = 0 (drought)
+        2. Irrigation cost penalty: penalizes water use based on action
+        
+        Parameters
+        ----------
+        action : int
+            Irrigation action {0, 1, 2}
+        
+        Returns
+        -------
+        reward : float
+            Reward signal for this step
+        """
+        # Penalty for water stress (soil completely dry)
+        stress_penalty = 0.0
+        if self.soil_moisture <= 0.0:
+            stress_penalty = -1.0
+        
+        # Penalty for irrigation cost (water usage)
+        irrigation_amount = self.irrigation_amounts[action]
+        irrigation_cost_penalty = -self.water_cost * irrigation_amount
+        
+        # Total reward
+        reward = stress_penalty + irrigation_cost_penalty
+        
+        return reward
+    
     def reset(self, seed=None, options=None):
         """
         Reset environment to initial state.
@@ -296,8 +331,8 @@ class IrrigationEnv(gym.Env):
         # Get new observation
         observation = self._get_obs()
         
-        # Placeholder reward (not implemented per requirements)
-        reward = 0.0
+        # Calculate reward
+        reward = self._calculate_reward(action)
         
         # Check if episode is complete
         terminated = self.current_step >= self.episode_length
