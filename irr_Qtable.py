@@ -31,9 +31,11 @@ def discretize_state(observation, n_soil_bins=12):
     # Extract and clip values to [0, 1]
     soil_moisture = np.clip(observation['soil_moisture'][0], 0.0, 1.0)
     crop_stage = observation['crop_stage']
-    rain = np.clip(observation['rain'] / 50.0, 0.0, 1.0)  # Assuming max rain = 50 mm
-    et0 = np.clip(observation['et0'] / 8.0, 0.0, 1.0)  # Assuming max et0 = 8 mm/day
-    
+    #rain = np.clip(observation['rain'] / 50.0, 0.0, 1.0)  # Assuming max rain = 50 mm
+    #et0 = np.clip(observation['et0'] / 8.0, 0.0, 1.0)  # Assuming max et0 = 8 mm/day
+    et0 = observation['et0'][0]
+    rain = observation['rain'][0]
+
     # Discretize soil moisture into fewer bins 
     soil_bin = int(soil_moisture * n_soil_bins)
     if soil_bin >= n_soil_bins:
@@ -45,6 +47,7 @@ def discretize_state(observation, n_soil_bins=12):
     # Binary rain: 0 = no rain, 1 = rain (threshold at 0.1)
     rain_bin = 1 if rain >= 0.1 else 0
     
+
     # Combine into single state index
     # State = (soil_bin, crop_stage, et0_bin, rain_bin)
     # ET₀ and rain are now binary (2 states each)
@@ -56,6 +59,29 @@ def discretize_state(observation, n_soil_bins=12):
     )
     
     return state_index
+
+def from_discrate_to_full_state(state_index, n_soil_bins=12):
+    """
+    Convert discrete state index back to full state components.
+    
+    Parameters
+    ----------
+    state_index : int
+        Discrete state index
+    n_soil_bins : int
+        Number of bins for soil moisture
+    
+    Returns
+    -------
+    state_components : tuple
+        (soil_bin, crop_stage, et0_bin, rain_bin)
+    """
+    rain_bin = state_index % 2
+    et0_bin = (state_index // 2) % 2
+    crop_stage = (state_index // (2 * 2)) % 3
+    soil_bin = state_index // (3 * 2 * 2)
+    
+    return (soil_bin, crop_stage, et0_bin, rain_bin)
 
 
 def get_state_space_size(n_soil_bins=12, n_crop_stages=3):
@@ -186,6 +212,7 @@ def train_q_learning(
     epsilon_decay=0.995,
     n_soil_bins=12,
     Q_init=None,
+    verbose = False
 ):
     """
     Train Q-learning agent on irrigation environment.
@@ -232,28 +259,41 @@ def train_q_learning(
         observation, info = env.reset()
         state = discretize_state(observation, n_soil_bins)
         done = False
-        
+        step_count = 0
+        total_reward = 0
         # Episode loop
         while not done:
+            
             # Select action using epsilon-greedy
             action_index = epsilon_greedy_action(Q, state, epsilon, N_ACTIONS)
             
             # Execute action in environment
             observation, reward, terminated, truncated, info = env.step(action_index)
             done = terminated or truncated
+            total_reward += reward
+            
             
             # Discretize next state
             next_state = discretize_state(observation, n_soil_bins)
+
             
             # Update Q-table
             q_learning_update(Q, state, action_index, reward, next_state, done, alpha, gamma)
             
             # Move to next state
             state = next_state
+            step_count += 1
+            if verbose:
+                print(f"Step {step_count}: State {state}, Action {action_index}, Reward {reward}")
+        
         
         # Decay epsilon
         epsilon = max(epsilon_end, epsilon * epsilon_decay)
-    
+        if verbose:
+           print(f"episode {episode+1}/{n_episodes} , total reward {total_reward}, epsilon {epsilon:.4f}")
+    print("\nTraining complete!")
+    print(f"Q-table shape: {Q.shape}")
+    print(f"Non-zero entries: {np.count_nonzero(Q)}/{Q.size}")
     return Q
 
 
