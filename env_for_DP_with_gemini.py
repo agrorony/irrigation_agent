@@ -279,7 +279,7 @@ class IrrigationEnv(gym.Env):
         # ---------- 2. Continuous stress penalties ----------
         # Below optimal
         if curr < bottom:
-            reward -= 5.0 * (bottom - curr)
+            reward -= 50.0 * (bottom - curr)
 
         # Above optimal
         if curr > top:
