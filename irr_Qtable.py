@@ -276,6 +276,7 @@ def train_q_learning(
     n_et0_bins=4,
     n_rain_bins=3,
     Q_init=None,
+    epsilon_init=None,
     use_optimistic_init=True,
     optimism_value=10.0,
     verbose = False
@@ -307,6 +308,8 @@ def train_q_learning(
         Number of bins for rain discretization
     Q_init : np.ndarray, optional
         Initial Q-table to continue training from. If None, initializes new table.
+    epsilon_init : float, optional
+        Initial epsilon value for continued training. If None, uses epsilon_start.
     use_optimistic_init : bool
         Whether to use optimistic initialization for low soil bins + irrigation actions
     optimism_value : float
@@ -316,6 +319,8 @@ def train_q_learning(
     -------
     Q : np.ndarray
         Trained Q-table
+    epsilon : float
+        Final epsilon value after training
     """
     # Initialize or use provided Q-table
     if Q_init is None:
@@ -328,7 +333,7 @@ def train_q_learning(
         Q = Q_init.copy()
     
     # Epsilon for exploration
-    epsilon = epsilon_start
+    epsilon = epsilon_init if epsilon_init is not None else epsilon_start
     
     # Training loop
     for episode in range(n_episodes):
@@ -371,7 +376,7 @@ def train_q_learning(
     print("\nTraining complete!")
     print(f"Q-table shape: {Q.shape}")
     print(f"Non-zero entries: {np.count_nonzero(Q)}/{Q.size}")
-    return Q
+    return Q, epsilon
 
 
 # ============================================================================
