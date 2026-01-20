@@ -60,7 +60,7 @@ class IrrigationEnv(gym.Env):
         episode_length: int = 90,
         et0_delta_range: tuple = (-2.0, 2.0),
         rain_delta_range: tuple = (-10.0, 10.0),
-        threshold_bottom_soil_moisture: float = 0.3,
+        threshold_bottom_soil_moisture: float = 0.4,
         threshold_top_soil_moisture: float = 0.7,
         reset_soil_moisture_range: tuple = None,
         reset_crop_stage_random: bool = False
