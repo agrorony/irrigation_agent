@@ -2,6 +2,17 @@
 Tabular Q-learning for Irrigation Scheduling Environment
 
 Implements discrete state-action Q-learning without modifying the environment.
+
+Public API:
+    train_q_learning()      - Train a Q-learning agent
+    extract_policy()        - Extract deterministic policy from Q-table
+    print_policy()          - Display policy in human-readable format
+    discretize_state()      - Convert continuous observation to discrete state
+    get_state_space_size()  - Get total number of discrete states
+    
+Constants:
+    ACTION_SPACE           - Mapping of action indices to irrigation depths
+    N_ACTIONS              - Number of available actions (3)
 """
 
 import numpy as np
@@ -31,8 +42,6 @@ def discretize_state(observation, n_soil_bins=12):
     # Extract and clip values to [0, 1]
     soil_moisture = np.clip(observation['soil_moisture'][0], 0.0, 1.0)
     crop_stage = observation['crop_stage']
-    #rain = np.clip(observation['rain'] / 50.0, 0.0, 1.0)  # Assuming max rain = 50 mm
-    #et0 = np.clip(observation['et0'] / 8.0, 0.0, 1.0)  # Assuming max et0 = 8 mm/day
     et0 = observation['et0'][0]
     rain = observation['rain'][0]
 
@@ -298,7 +307,59 @@ def train_q_learning(
 
 
 # ============================================================================
-# 5. MAIN EXECUTION
+# 5. POLICY EXTRACTION
+# ============================================================================
+
+def extract_policy(Q):
+    """
+    Extract deterministic policy from Q-table.
+    
+    The policy selects the action with highest Q-value for each state.
+    
+    Parameters
+    ----------
+    Q : np.ndarray
+        Trained Q-table of shape (n_states, n_actions)
+    
+    Returns
+    -------
+    policy : np.ndarray
+        Policy array of shape (n_states,) with action indices
+    """
+    return np.argmax(Q, axis=1)
+
+
+def print_policy(policy, n_soil_bins=12, action_names=None):
+    """
+    Print human-readable policy table.
+    
+    Parameters
+    ----------
+    policy : np.ndarray
+        Policy array from extract_policy()
+    n_soil_bins : int
+        Number of soil moisture bins used
+    action_names : list, optional
+        Names for each action. If None, uses default names.
+    """
+    if action_names is None:
+        action_names = ['No Irr (0mm)', 'Light (5mm)', 'Heavy (15mm)']
+    
+    print("="*80)
+    print("LEARNED POLICY TABLE")
+    print("="*80)
+    print(f"{'State':<7} {'Soil_bin':<10} {'Crop_Stage':<12} {'ET0_bin':<9} {'Rain_bin':<10} {'Action'}")
+    print("-"*80)
+    
+    for state in range(len(policy)):
+        soil_bin, crop_stage, et0_bin, rain_bin = from_discrate_to_full_state(state, n_soil_bins)
+        action = policy[state]
+        action_label = action_names[action] if action < len(action_names) else f"Action {action}"
+        print(f"{state:<7} {soil_bin:<10} {crop_stage:<12} {et0_bin:<9} {rain_bin:<10} {action} ({action_label})")
+
+
+# ============================================================================
+# 6. MAIN EXECUTION
 # ============================================================================
 
 if __name__ == "__main__":
@@ -323,6 +384,8 @@ if __name__ == "__main__":
         n_soil_bins=12,
     )
     
-    print("Q-learning training complete")
-    print(f"Q-table shape: {Q.shape}")
-    print(f"Non-zero entries: {np.count_nonzero(Q)}/{Q.size}")
+    # Extract and display policy
+    policy = extract_policy(Q)
+    print("\nPolicy extraction complete")
+    print(f"Policy shape: {policy.shape}")
+    print_policy(policy, n_soil_bins=12)
