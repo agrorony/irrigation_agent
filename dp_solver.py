@@ -1,7 +1,12 @@
+import numpy as np
+from irr_Qtable import from_discrate_to_full_state, discretize_state
+
+def get_state_space_size(n_soil_bins):
+    # Total states = soil_bins * 3 stages * 2 rain_states * 2 et0_states
+    return n_soil_bins * 3 * 2 * 2
+
 def run_value_iteration(env, n_soil_bins, gamma=0.99, theta=1e-6):
-    from irr_Qtable import from_discrate_to_full_state, discretize_state
-    
-    n_stages = 3
+    # Now it can find the function!
     n_states = get_state_space_size(n_soil_bins)
     V = np.zeros(n_states)
     
