@@ -2,6 +2,17 @@
 Tabular Q-learning for Irrigation Scheduling Environment
 
 Implements discrete state-action Q-learning without modifying the environment.
+
+Public API:
+    train_q_learning()      - Train a Q-learning agent
+    extract_policy()        - Extract deterministic policy from Q-table
+    print_policy()          - Display policy in human-readable format
+    discretize_state()      - Convert continuous observation to discrete state
+    get_state_space_size()  - Get total number of discrete states
+    
+Constants:
+    ACTION_SPACE           - Mapping of action indices to irrigation depths
+    N_ACTIONS              - Number of available actions (3)
 """
 
 import numpy as np
@@ -12,7 +23,7 @@ from irrigation_env import IrrigationEnv
 # 1. STATE DISCRETIZATION
 # ============================================================================
 
-def discretize_state(observation, n_soil_bins=12):
+def discretize_state(observation, n_soil_bins=6, n_et0_bins=4, n_rain_bins=3):
     """
     Convert continuous observation to discrete state index.
     
@@ -21,7 +32,11 @@ def discretize_state(observation, n_soil_bins=12):
     observation : dict
         Environment observation with keys: soil_moisture, crop_stage, rain, et0
     n_soil_bins : int
-        Number of bins for soil moisture [0, 1], default 12 for fewer states
+        Number of bins for soil moisture [0, 1], default 6
+    n_et0_bins : int
+        Number of bins for ET₀ [0, 1], default 4
+    n_rain_bins : int
+        Number of bins for rain [0, 1], default 3
     
     Returns
     -------
@@ -31,36 +46,38 @@ def discretize_state(observation, n_soil_bins=12):
     # Extract and clip values to [0, 1]
     soil_moisture = np.clip(observation['soil_moisture'][0], 0.0, 1.0)
     crop_stage = observation['crop_stage']
-    #rain = np.clip(observation['rain'] / 50.0, 0.0, 1.0)  # Assuming max rain = 50 mm
-    #et0 = np.clip(observation['et0'] / 8.0, 0.0, 1.0)  # Assuming max et0 = 8 mm/day
     et0 = observation['et0'][0]
     rain = observation['rain'][0]
 
-    # Discretize soil moisture into fewer bins 
+    # Discretize soil moisture
     soil_bin = int(soil_moisture * n_soil_bins)
     if soil_bin >= n_soil_bins:
         soil_bin = n_soil_bins - 1
 
-    # Binary ET₀: 0 = low, 1 = high (threshold at 0.5)
-    et0_bin = 1 if et0 >= 0.5 else 0
+    # Discretize ET₀ into 3 bins: low / medium / high
+    et0_bin = int(et0 * n_et0_bins)
+    if et0_bin >= n_et0_bins:
+        et0_bin = n_et0_bins - 1
     
-    # Binary rain: 0 = no rain, 1 = rain (threshold at 0.1)
-    rain_bin = 1 if rain >= 0.1 else 0
+    # Discretize rain into 3 bins: low / medium / high
+    rain_bin = int(rain * n_rain_bins)
+    if rain_bin >= n_rain_bins:
+        rain_bin = n_rain_bins - 1
     
 
     # Combine into single state index
     # State = (soil_bin, crop_stage, et0_bin, rain_bin)
-    # ET₀ and rain are now binary (2 states each)
+    n_crop_stages = 3
     state_index = (
-        soil_bin * (3 * 2 * 2) +
-        crop_stage * (2 * 2) +
-        et0_bin * 2 +
+        soil_bin * (n_crop_stages * n_et0_bins * n_rain_bins) +
+        crop_stage * (n_et0_bins * n_rain_bins) +
+        et0_bin * n_rain_bins +
         rain_bin
     )
     
     return state_index
 
-def from_discrate_to_full_state(state_index, n_soil_bins=12):
+def from_discrate_to_full_state(state_index, n_soil_bins=6, n_et0_bins=4, n_rain_bins=3):
     """
     Convert discrete state index back to full state components.
     
@@ -70,31 +87,35 @@ def from_discrate_to_full_state(state_index, n_soil_bins=12):
         Discrete state index
     n_soil_bins : int
         Number of bins for soil moisture
+    n_et0_bins : int
+        Number of bins for ET₀
+    n_rain_bins : int
+        Number of bins for rain
     
     Returns
     -------
     state_components : tuple
         (soil_bin, crop_stage, et0_bin, rain_bin)
     """
-    rain_bin = state_index % 2
-    et0_bin = (state_index // 2) % 2
-    crop_stage = (state_index // (2 * 2)) % 3
-    soil_bin = state_index // (3 * 2 * 2)
+    n_crop_stages = 3
+    rain_bin = state_index % n_rain_bins
+    et0_bin = (state_index // n_rain_bins) % n_et0_bins
+    crop_stage = (state_index // (n_et0_bins * n_rain_bins)) % n_crop_stages
+    soil_bin = state_index // (n_crop_stages * n_et0_bins * n_rain_bins)
     
     return (soil_bin, crop_stage, et0_bin, rain_bin)
 
 
-def get_state_space_size(n_soil_bins=12, n_crop_stages=3):
+def get_state_space_size(n_soil_bins=6, n_crop_stages=3, n_et0_bins=4, n_rain_bins=3):
     """
     Calculate total number of discrete states.
     
     Returns
     -------
     n_states : int
-        Total number of discrete states (simplified: soil_bins × crop_stages)
+        Total number of discrete states
     """
-    # Simplified state space: only soil moisture × crop stages
-    return n_soil_bins * n_crop_stages*2*2
+    return n_soil_bins * n_crop_stages * n_et0_bins * n_rain_bins
 
 
 # ============================================================================
@@ -132,6 +153,47 @@ def initialize_q_table(n_states, n_actions):
         Q-table of shape (n_states, n_actions)
     """
     return np.zeros((n_states, n_actions))
+
+
+def initialize_q_table_optimistic(n_states, n_actions, n_soil_bins=6, n_et0_bins=4, n_rain_bins=3, optimism_value=10.0):
+    """
+    Initialize Q-table with optimistic values for low soil moisture bins + irrigation actions.
+    
+    Encourages exploration of irrigation in dry conditions where it's most needed.
+    
+    Parameters
+    ----------
+    n_states : int
+        Number of discrete states
+    n_actions : int
+        Number of discrete actions
+    n_soil_bins : int
+        Number of soil moisture bins
+    n_et0_bins : int
+        Number of ET₀ bins
+    n_rain_bins : int
+        Number of rain bins
+    optimism_value : float
+        Optimistic initialization value for targeted state-action pairs
+    
+    Returns
+    -------
+    Q : np.ndarray
+        Q-table of shape (n_states, n_actions) with optimistic initialization
+    """
+    Q = np.zeros((n_states, n_actions))
+    
+    # Apply optimistic initialization only to low soil bins (0-1) with irrigation actions
+    for state in range(n_states):
+        soil_bin, crop_stage, et0_bin, rain_bin = from_discrate_to_full_state(state, n_soil_bins, n_et0_bins, n_rain_bins)
+        
+        # Only for lowest soil bins (very dry conditions)
+        if soil_bin <= 1:
+            # Initialize irrigation actions optimistically
+            Q[state, 1] = optimism_value  # Light irrigation
+            Q[state, 2] = optimism_value  # Heavy irrigation
+    
+    return Q
 
 
 # ============================================================================
@@ -208,10 +270,14 @@ def train_q_learning(
     alpha=0.1,
     gamma=0.99,
     epsilon_start=1.0,
-    epsilon_end=0.01,
-    epsilon_decay=0.995,
-    n_soil_bins=12,
+    epsilon_end=0.1,
+    epsilon_decay=0.998,
+    n_soil_bins=6,
+    n_et0_bins=4,
+    n_rain_bins=3,
     Q_init=None,
+    use_optimistic_init=True,
+    optimism_value=10.0,
     verbose = False
 ):
     """
@@ -230,13 +296,21 @@ def train_q_learning(
     epsilon_start : float
         Initial exploration rate
     epsilon_end : float
-        Final exploration rate
+        Final exploration rate (increased from 0.01 to 0.1 for better exploration)
     epsilon_decay : float
-        Epsilon decay rate per episode
+        Epsilon decay rate per episode (slower decay: 0.998 vs 0.995)
     n_soil_bins : int
         Number of bins for soil moisture discretization
+    n_et0_bins : int
+        Number of bins for ET₀ discretization
+    n_rain_bins : int
+        Number of bins for rain discretization
     Q_init : np.ndarray, optional
         Initial Q-table to continue training from. If None, initializes new table.
+    use_optimistic_init : bool
+        Whether to use optimistic initialization for low soil bins + irrigation actions
+    optimism_value : float
+        Optimistic value for targeted state-action pairs
     
     Returns
     -------
@@ -245,8 +319,11 @@ def train_q_learning(
     """
     # Initialize or use provided Q-table
     if Q_init is None:
-        n_states = get_state_space_size(n_soil_bins)
-        Q = initialize_q_table(n_states, N_ACTIONS)
+        n_states = get_state_space_size(n_soil_bins, n_et0_bins=n_et0_bins, n_rain_bins=n_rain_bins)
+        if use_optimistic_init:
+            Q = initialize_q_table_optimistic(n_states, N_ACTIONS, n_soil_bins, n_et0_bins, n_rain_bins, optimism_value)
+        else:
+            Q = initialize_q_table(n_states, N_ACTIONS)
     else:
         Q = Q_init.copy()
     
@@ -257,7 +334,7 @@ def train_q_learning(
     for episode in range(n_episodes):
         # Reset environment
         observation, info = env.reset()
-        state = discretize_state(observation, n_soil_bins)
+        state = discretize_state(observation, n_soil_bins, n_et0_bins, n_rain_bins)
         done = False
         step_count = 0
         total_reward = 0
@@ -274,7 +351,7 @@ def train_q_learning(
             
             
             # Discretize next state
-            next_state = discretize_state(observation, n_soil_bins)
+            next_state = discretize_state(observation, n_soil_bins, n_et0_bins, n_rain_bins)
 
             
             # Update Q-table
@@ -298,7 +375,63 @@ def train_q_learning(
 
 
 # ============================================================================
-# 5. MAIN EXECUTION
+# 5. POLICY EXTRACTION
+# ============================================================================
+
+def extract_policy(Q):
+    """
+    Extract deterministic policy from Q-table.
+    
+    The policy selects the action with highest Q-value for each state.
+    
+    Parameters
+    ----------
+    Q : np.ndarray
+        Trained Q-table of shape (n_states, n_actions)
+    
+    Returns
+    -------
+    policy : np.ndarray
+        Policy array of shape (n_states,) with action indices
+    """
+    return np.argmax(Q, axis=1)
+
+
+def print_policy(policy, n_soil_bins=6, n_et0_bins=4, n_rain_bins=3, action_names=None):
+    """
+    Print human-readable policy table.
+    
+    Parameters
+    ----------
+    policy : np.ndarray
+        Policy array from extract_policy()
+    n_soil_bins : int
+        Number of soil moisture bins used
+    n_et0_bins : int
+        Number of ET₀ bins used
+    n_rain_bins : int
+        Number of rain bins used
+    action_names : list, optional
+        Names for each action. If None, uses default names.
+    """
+    if action_names is None:
+        action_names = ['No Irr (0mm)', 'Light (5mm)', 'Heavy (15mm)']
+    
+    print("="*80)
+    print("LEARNED POLICY TABLE")
+    print("="*80)
+    print(f"{'State':<7} {'Soil_bin':<10} {'Crop_Stage':<12} {'ET0_bin':<9} {'Rain_bin':<10} {'Action'}")
+    print("-"*80)
+    
+    for state in range(len(policy)):
+        soil_bin, crop_stage, et0_bin, rain_bin = from_discrate_to_full_state(state, n_soil_bins, n_et0_bins, n_rain_bins)
+        action = policy[state]
+        action_label = action_names[action] if action < len(action_names) else f"Action {action}"
+        print(f"{state:<7} {soil_bin:<10} {crop_stage:<12} {et0_bin:<9} {rain_bin:<10} {action} ({action_label})")
+
+
+# ============================================================================
+# 6. MAIN EXECUTION
 # ============================================================================
 
 if __name__ == "__main__":
@@ -323,6 +456,8 @@ if __name__ == "__main__":
         n_soil_bins=12,
     )
     
-    print("Q-learning training complete")
-    print(f"Q-table shape: {Q.shape}")
-    print(f"Non-zero entries: {np.count_nonzero(Q)}/{Q.size}")
+    # Extract and display policy
+    policy = extract_policy(Q)
+    print("\nPolicy extraction complete")
+    print(f"Policy shape: {policy.shape}")
+    print_policy(policy, n_soil_bins=12)
