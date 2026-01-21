@@ -9,7 +9,8 @@ import gymnasium as gym
 from stable_baselines3.common.monitor import Monitor
 from stable_baselines3.common.vec_env import DummyVecEnv
 from stable_baselines3.common.env_checker import check_env
-from irrigation_agent.irrigation_env import IrrigationEnv
+from irrigation_env import IrrigationEnv
+from irrigation_env_continuous import IrrigationEnvContinuous
 
 
 def make_irrigation_env(
@@ -22,7 +23,9 @@ def make_irrigation_env(
     threshold_bottom_soil_moisture=0.4,
     threshold_top_soil_moisture=0.7,
     seed=None,
-    monitor_filename=None
+    monitor_filename=None,
+    continuous=False,
+    max_irrigation=30.0
 ):
     """
     Create an IrrigationEnv instance with optional monitoring.
@@ -49,22 +52,43 @@ def make_irrigation_env(
         Random seed for reproducibility
     monitor_filename : str, optional
         If provided, wraps env with Monitor and saves logs to this path
+    continuous : bool, optional
+        If True, creates IrrigationEnvContinuous with continuous action space.
+        If False (default), creates discrete IrrigationEnv. Default: False
+    max_irrigation : float, optional
+        Maximum irrigation amount (mm) for continuous action space.
+        Only used when continuous=True. Default: 30.0
     
     Returns
     -------
     env : gym.Env
         Irrigation environment (optionally wrapped with Monitor)
     """
-    env = IrrigationEnv(
-        max_et0=max_et0,
-        max_rain=max_rain,
-        et0_range=et0_range,
-        rain_range=rain_range,
-        max_soil_moisture=max_soil_moisture,
-        episode_length=episode_length,
-        threshold_bottom_soil_moisture=threshold_bottom_soil_moisture,
-        threshold_top_soil_moisture=threshold_top_soil_moisture
-    )
+    if continuous:
+        # Create continuous action space environment
+        env = IrrigationEnvContinuous(
+            max_et0=max_et0,
+            max_rain=max_rain,
+            et0_range=et0_range,
+            rain_range=rain_range,
+            max_soil_moisture=max_soil_moisture,
+            episode_length=episode_length,
+            threshold_bottom_soil_moisture=threshold_bottom_soil_moisture,
+            threshold_top_soil_moisture=threshold_top_soil_moisture,
+            max_irrigation=max_irrigation
+        )
+    else:
+        # Create discrete action space environment (default)
+        env = IrrigationEnv(
+            max_et0=max_et0,
+            max_rain=max_rain,
+            et0_range=et0_range,
+            rain_range=rain_range,
+            max_soil_moisture=max_soil_moisture,
+            episode_length=episode_length,
+            threshold_bottom_soil_moisture=threshold_bottom_soil_moisture,
+            threshold_top_soil_moisture=threshold_top_soil_moisture
+        )
     
     if seed is not None:
         env.reset(seed=seed)
