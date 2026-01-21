@@ -97,7 +97,7 @@ This project implements **discrete state-action Q-learning** for irrigation sche
 ## Installation
 
 ```bash
-pip install numpy gymnasium matplotlib scipy
+pip install numpy gymnasium matplotlib scipy stable-baselines3
 ```
 
 ## Quick Start
@@ -123,6 +123,112 @@ Q = train_q_learning(env, n_episodes=1000, alpha=0.1, gamma=0.99)
 # Extract policy
 policy = np.argmax(Q, axis=1)  # Best action for each state
 print(f"Learned policy: {policy}")
+```
+
+## Continuous Action Space (PPO)
+
+For finer irrigation control beyond the 3 discrete levels (0mm, 5mm, 15mm), use the continuous action environment with PPO. This allows the agent to output **any irrigation amount** in the range [0, 30] mm.
+
+### Quick Start
+
+```python
+from irrigation_env_continuous import IrrigationEnvContinuous
+from stable_baselines3 import PPO
+
+# Create continuous environment
+env = IrrigationEnvContinuous(
+    max_et0=8.0,
+    max_rain=50.0,
+    et0_range=(2.0, 8.0),
+    rain_range=(0.0, 0.8),
+    max_soil_moisture=320.0,
+    episode_length=90,
+    max_irrigation=30.0  # Continuous range [0, 30] mm
+)
+
+# Train PPO agent
+model = PPO("MultiInputPolicy", env, verbose=1, ent_coef=0.01)
+model.learn(total_timesteps=200000)
+
+# Evaluate policy
+obs, _ = env.reset()
+action, _ = model.predict(obs, deterministic=True)
+print(f"Recommended irrigation: {action[0]:.2f} mm")
+```
+
+### Training from Command Line
+
+```bash
+# Train continuous PPO (200k timesteps, 4 parallel environments)
+python train_ppo_continuous.py --timesteps 200000 --n-envs 4 --seed 42
+
+# Monitor training with TensorBoard
+tensorboard --logdir logs/ppo_continuous/
+
+# Evaluate trained model
+python evaluate_ppo_continuous.py --n-episodes 50
+```
+
+### Key Differences: Discrete vs. Continuous
+
+| Feature | Q-Table (Discrete) | PPO (Continuous) |
+|---------|-------------------|------------------|
+| **Action space** | 3 actions: 0, 5, 15 mm | Continuous: [0, 30] mm |
+| **Interpretability** | ✅ Full transparency (108 Q-values) | ⚠️ Neural network (black box) |
+| **Training time** | ~1000 episodes (~10 min) | ~200k timesteps (~2-4 hours) |
+| **Granularity** | Coarse (3 irrigation levels) | Fine (any amount, e.g., 12.7 mm) |
+| **Sample efficiency** | Excellent (small state space) | Moderate (requires more data) |
+| **Use case** | Policy analysis, interpretability | Optimal control, real-world deployment |
+| **Exploration** | ε-greedy (simple) | Entropy-regularized (complex) |
+
+### When to Use Continuous Actions
+
+**Use continuous PPO if:**
+- ✅ You need fine-grained irrigation control (not just 0/5/15 mm)
+- ✅ You're deploying to real irrigation systems with variable flow rates
+- ✅ You're okay with neural network "black box" policies
+- ✅ You have compute resources for 200k+ timesteps of training
+
+**Use discrete Q-table if:**
+- ✅ You need fully interpretable policies (see every decision)
+- ✅ You want fast training (<1000 episodes)
+- ✅ Coarse irrigation levels (0/5/15 mm) are sufficient
+- ✅ You're doing policy analysis or research on RL interpretability
+
+### File Structure
+
+```
+irrigation_agent/
+├── irrigation_env.py                # Discrete environment (Q-table)
+├── irrigation_env_continuous.py     # Continuous environment (PPO)
+├── irr_Qtable.py                    # Tabular Q-learning
+├── ppo_env.py                       # Environment factory (supports both)
+├── train_ppo_continuous.py          # Continuous PPO training
+├── evaluate_ppo_continuous.py       # Continuous PPO evaluation
+└── models/
+    ├── qtable/                      # Q-table policies
+    └── ppo_continuous/              # PPO neural network policies
+```
+
+### Advanced: Comparing Policies
+
+```python
+# Train both approaches on the same regime
+from irrigation_env import IrrigationEnv
+from irrigation_env_continuous import IrrigationEnvContinuous
+from irr_Qtable import train_q_learning
+from stable_baselines3 import PPO
+
+# Discrete Q-learning
+env_discrete = IrrigationEnv(rain_range=(0.0, 0.8), ...)
+Q = train_q_learning(env_discrete, n_episodes=1000)
+
+# Continuous PPO
+env_continuous = IrrigationEnvContinuous(rain_range=(0.0, 0.8), max_irrigation=30.0, ...)
+model = PPO("MultiInputPolicy", env_continuous)
+model.learn(total_timesteps=200000)
+
+# Compare total water usage, rewards, etc.
 ```
 
 ## Research Use
