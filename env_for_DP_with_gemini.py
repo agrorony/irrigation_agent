@@ -274,7 +274,7 @@ class IrrigationEnv(gym.Env):
 
         # Leaving optimal zone
         if bottom <= prev <= top and (curr < bottom or curr > top):
-            reward -= 4.0
+            reward -= 40.0
 
         # ---------- 2. Continuous stress penalties ----------
         # Below optimal
