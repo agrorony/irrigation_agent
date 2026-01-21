@@ -233,20 +233,21 @@ model.learn(total_timesteps=200000)
 
 ## Research Use
 
-This project is designed for **academic analysis of tabular RL policies**, not as a production irrigation controller. Use cases include:
+This project provides **both tabular Q-learning and neural network PPO** for irrigation scheduling research. Use cases include:
 
 - **Comparative regime analysis** - How do policies differ across climates?
-- **Interpretability studies** - Can we explain why certain actions are chosen?
-- **Baseline benchmarking** - How do Q-learning policies compare to heuristics?
+- **Interpretability studies** - Compare transparent Q-tables vs. neural network policies
+- **Baseline benchmarking** - How do Q-learning and PPO policies compare to heuristics?
 - **Robustness testing** - Are policies stable across hyperparameters?
+- **Method comparison** - Compare tabular vs. deep RL on the same environment
 
 See [PROJECT_STATUS.md](PROJECT_STATUS.md) Section 3 for detailed next-step proposals.
 
-## Key Constraints
+## Design Philosophy
 
-🚫 **No neural networks** - Tabular methods only (interpretability > scalability)  
-🚫 **No environment modifications** - Fixed dynamics, fixed rewards  
-🚫 **No reward engineering** - Simple yield - water_cost formula maintained  
+✅ **Dual approach** - Both tabular Q-learning (interpretability) and PPO (performance)  
+✅ **No environment modifications** - Fixed dynamics, fixed rewards  
+✅ **No reward engineering** - Simple yield - water_cost formula maintained  
 ✅ **Focus on analysis** - Extraction, comparison, visualization, documentation
 
 ## Citation
@@ -291,12 +292,13 @@ See **[PROJECT_STATUS.md](PROJECT_STATUS.md)** Section 3 for detailed proposals:
 
 ---
 
-## Constraints and Design Philosophy
+## Design Philosophy
 
-- ✅ **Tabular Q-learning only** (no neural networks, DQN, PPO, etc.)
-- ✅ **Interpretability first:** Q-tables as final research output, not intermediate step
+- ✅ **Dual approach:** Both tabular Q-learning (interpretability) and PPO (performance)
+- ✅ **Interpretability first for Q-learning:** Q-tables as final research output, not intermediate step
 - ✅ **Fixed environment dynamics:** No drainage, runoff, or reward modifications
 - ✅ **Physical calibration:** Stability achieved through parameter tuning, not algorithm tweaks
+- ✅ **Method comparison:** Compare tabular vs. deep RL on identical environments
 
 ---
 
