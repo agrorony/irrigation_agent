@@ -286,7 +286,7 @@ if __name__ == "__main__":
     )
     
     # Plot results
-    plot_scaling_results(results, save_path='scaling_results. png')
+    plot_scaling_results(results, save_path='scaling_results.png')
     
     # Print summary
     print("\nSUMMARY:")

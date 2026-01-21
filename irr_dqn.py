@@ -485,7 +485,7 @@ def evaluate_policy(agent, env, n_episodes=50, verbose=True):
     
     if verbose: 
         print(f"\nEvaluation over {n_episodes} episodes:")
-        print(f"  Average Return: {avg_return:. 2f} ± {std_return:.2f}")
+        print(f"  Average Return: {avg_return:.2f} ± {std_return:.2f}")
         print(f"  Min Return: {np.min(returns):.2f}")
         print(f"  Max Return: {np.max(returns):.2f}")
     
