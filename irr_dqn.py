@@ -492,6 +492,107 @@ def evaluate_policy(agent, env, n_episodes=50, verbose=True):
     return avg_return, returns
 
 
+def run_policy_rollout(agent, env, seed=None, max_steps=None, verbose=True):
+    """
+    Run a single episode with greedy policy and log detailed step information.
+    
+    Useful for debugging and analyzing trained agent behavior.
+    
+    Parameters
+    ----------
+    agent : DQNAgent
+        Trained DQN agent
+    env : IrrigationEnv
+        Environment instance
+    seed : int, optional
+        Random seed for reproducibility
+    max_steps : int, optional
+        Maximum steps to run (if None, runs until episode ends)
+    verbose : bool
+        If True, prints formatted table to console
+    
+    Returns
+    -------
+    rollout_data : list of dict
+        List of step dictionaries with keys: day, soil_moisture, crop_stage,
+        et0, rain, action, irrigation, reward
+    """
+    # Reset environment
+    if seed is not None:
+        observation, _ = env.reset(seed=seed)
+    else:
+        observation, _ = env.reset()
+    
+    state = observation_to_state(observation)
+    done = False
+    step_count = 0
+    rollout_data = []
+    
+    # Print header
+    if verbose:
+        print("\n" + "="*90)
+        print("POLICY ROLLOUT - Greedy Action Selection (epsilon=0)")
+        print("="*90)
+        print(f"{'Day':>4} {'Soil':>8} {'Stage':>6} {'ET0':>8} {'Rain':>8} {'Action':>7} {'Irrig':>8} {'Reward':>8}")
+        print(f"{'':>4} {'(frac)':>8} {'':>6} {'(mm/d)':>8} {'(mm/d)':>8} {'':>7} {'(mm)':>8} {'':>8}")
+        print("-"*90)
+    
+    # Run episode
+    while not done:
+        # Select greedy action
+        action = agent.select_action(state, epsilon=0.0)
+        
+        # Execute action
+        next_observation, reward, terminated, truncated, info = env.step(action)
+        done = terminated or truncated
+        
+        # Extract raw values from info dict
+        soil_moisture = info['soil_moisture']
+        crop_stage = info['crop_stage']
+        et0 = info['et0']
+        rain = info['rain']
+        irrigation = info['irrigation']
+        
+        # Store step data
+        step_data = {
+            'day': step_count + 1,
+            'soil_moisture': soil_moisture,
+            'crop_stage': crop_stage,
+            'et0': et0,
+            'rain': rain,
+            'action': action,
+            'irrigation': irrigation,
+            'reward': reward
+        }
+        rollout_data.append(step_data)
+        
+        # Print step
+        if verbose:
+            print(f"{step_data['day']:4d} {step_data['soil_moisture']:8.3f} "
+                  f"{step_data['crop_stage']:6d} {step_data['et0']:8.2f} "
+                  f"{step_data['rain']:8.2f} {step_data['action']:7d} "
+                  f"{step_data['irrigation']:8.2f} {step_data['reward']:8.2f}")
+        
+        # Update state
+        state = observation_to_state(next_observation)
+        step_count += 1
+        
+        # Check max_steps limit
+        if max_steps is not None and step_count >= max_steps:
+            break
+    
+    if verbose:
+        print("-"*90)
+        total_reward = sum(d['reward'] for d in rollout_data)
+        total_irrigation = sum(d['irrigation'] for d in rollout_data)
+        print(f"Episode complete: {len(rollout_data)} days")
+        print(f"Total reward: {total_reward:.2f}")
+        print(f"Total irrigation: {total_irrigation:.2f} mm")
+        print("="*90 + "\n")
+    
+    return rollout_data
+
+
 # ============================================================================
 # 7. MAIN EXECUTION
 # ============================================================================
@@ -501,10 +602,10 @@ if __name__ == "__main__":
     
     # Create environment
     env = IrrigationEnv(
-        max_et0=8.0,
-        max_rain=50.0,
-        et0_range=(2.0, 8.0),
-        rain_range=(0.0, 40.0),
+        max_et0=50.0,
+        max_rain=20.0,
+        et0_range=(2.0, 50.0),
+        rain_range=(0.0, 20.0),
         episode_length=90,
     )
     
@@ -530,3 +631,9 @@ if __name__ == "__main__":
     print("EVALUATING TRAINED AGENT")
     print("="*60)
     avg_return, returns = evaluate_policy(agent, env, n_episodes=50)
+    
+    # Run policy rollout for detailed inspection
+    print("\n" + "="*60)
+    print("POLICY ROLLOUT - Detailed Episode Trace")
+    print("="*60)
+    rollout_data = run_policy_rollout(agent, env, seed=42)
