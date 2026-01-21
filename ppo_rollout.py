@@ -100,7 +100,7 @@ def run_ppo_rollout(model, env, seed=None, max_steps=None, verbose=True):
         total_reward = sum(d['reward'] for d in rollout_data)
         total_irrigation = sum(d['irrigation'] for d in rollout_data)
         print(f"Episode complete:  {len(rollout_data)} days")
-        print(f"Total reward: {total_reward:. 2f}")
+        print(f"Total reward: {total_reward:.2f}")
         print(f"Total irrigation: {total_irrigation:.2f} mm")
         print("="*90 + "\n")
     
