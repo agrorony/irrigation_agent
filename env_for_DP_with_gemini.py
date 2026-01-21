@@ -100,7 +100,7 @@ class IrrigationEnv(gym.Env):
         self.kc_by_stage = np.array([0.5, 1.15, 0.7])
         
         # Reward function parameters
-        self.water_cost = 0.01  # Cost per mm of irrigation applied
+        self.water_cost = 0.0  # Cost per mm of irrigation applied
         self.threshold_bottom_soil_moisture = threshold_bottom_soil_moisture
         self.threshold_top_soil_moisture = threshold_top_soil_moisture
         
@@ -279,7 +279,7 @@ class IrrigationEnv(gym.Env):
         # ---------- 2. Continuous stress penalties ----------
         # Below optimal
         if curr < bottom:
-            reward -= 50.0 * (bottom - curr)
+            reward -= 5.0 * (bottom - curr)
 
         # Above optimal
         if curr > top:
