@@ -689,7 +689,7 @@ def run_policy_rollout(agent, env, seed=None, max_steps=None, verbose=True):
 # ============================================================================
 
 if __name__ == "__main__": 
-    from irrigation_env import IrrigationEnv
+    from irrigation_agent.irrigation_env import IrrigationEnv
     
     # Create environment
     env = IrrigationEnv(

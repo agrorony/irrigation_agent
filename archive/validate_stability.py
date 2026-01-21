@@ -7,7 +7,7 @@ mean residence ≥ 10 steps across multiple independent runs.
 
 import numpy as np
 from collections import defaultdict
-from irrigation_env import IrrigationEnv
+from irrigation_agent.irrigation_env import IrrigationEnv
 from irr_Qtable import discretize_state, N_ACTIONS
 
 

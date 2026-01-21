@@ -10,7 +10,7 @@ This script:
 from pathlib import Path
 import matplotlib.pyplot as plt
 import numpy as np
-from irrigation_env import IrrigationEnv
+from irrigation_agent.irrigation_env import IrrigationEnv
 from irr_dqn import DQNAgent, run_policy_rollout, evaluate_policy
 
 

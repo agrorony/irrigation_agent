@@ -1,10 +1,14 @@
 """
-Irrigation scheduling environment for reinforcement learning.
+Gymnasium Environment for Irrigation Scheduling
+================================================
 
-A Gymnasium-compliant environment for irrigation decision-making with:
+A reinforcement learning environment for irrigation decision-making with:
 - Configurable climatic regimes (ET₀ and rainfall ranges)
 - Single-layer soil moisture dynamics
 - Discrete crop growth stages
+- Full Gymnasium API compliance
+
+Design: Climate parameters are constructor arguments, not hard-coded constants.
 """
 
 import numpy as np
@@ -41,10 +45,6 @@ class IrrigationEnv(gym.Env):
         Maximum soil water holding capacity (mm), default 100
     initial_soil_moisture : float, optional
         Starting soil moisture as fraction [0, 1], default 0.5
-    reset_soil_moisture_range : tuple, optional
-        (min, max) range for sampling initial soil moisture [0, 1]. If None, uses initial_soil_moisture
-    reset_crop_stage_random : bool, optional
-        If True, randomly sample initial crop stage from {0, 1, 2}. Default False (starts at 0)
     """
     
     metadata = {"render_modes": []}
@@ -60,7 +60,7 @@ class IrrigationEnv(gym.Env):
         episode_length: int = 90,
         et0_delta_range: tuple = (-2.0, 2.0),
         rain_delta_range: tuple = (-10.0, 10.0),
-        threshold_bottom_soil_moisture: float = 0.4,
+        threshold_bottom_soil_moisture: float = 0.3,
         threshold_top_soil_moisture: float = 0.7,
         reset_soil_moisture_range: tuple = None,
         reset_crop_stage_random: bool = False
@@ -186,61 +186,74 @@ class IrrigationEnv(gym.Env):
         Parameters
         ----------
         day : int
-            Current day of the growing season
+            Current day in episode [0, episode_length)
         
         Returns
         -------
         stage : int
-            Crop growth stage (0=emergence, 1=flowering, 2=maturity)
+            Crop stage: 0=emergence, 1=flowering, 2=maturity
         """
-        # Simplified growth stages:
-        # Days 0-30: Emergence (stage 0)
-        # Days 31-60: Flowering (stage 1)
-        # Days 61+: Maturity (stage 2)
-        if day <= 30:
-            return 0
-        elif day <= 60:
-            return 1
+        # Simple stage progression: divide season into thirds
+        stage_duration = self.episode_length // 3
+        
+        if day < stage_duration:
+            return 0  # Emergence
+        elif day < 2 * stage_duration:
+            return 1  # Flowering
         else:
-            return 2
+            return 2  # Maturity
     
-    def _update_soil_moisture(self, action: int) -> None:
+    def _update_state(self, action: int):
         """
-        Update soil moisture based on irrigation action, ET, and rainfall.
+        Update soil moisture and other state variables based on action and climate.
+        
+        Water balance equation:
+        SM(t+1) = SM(t) + Irrigation(action) + Rain - ET_crop
+        
+        Where:
+        - ET_crop = ET₀ × Kc(crop_stage)
+        - All values constrained to valid bounds
         
         Parameters
         ----------
         action : int
-            Irrigation action (0=none, 1=light, 2=heavy)
+            Irrigation decision {0, 1, 2}
         """
-        # Get crop coefficient for current growth stage
+        # Get irrigation amount for this action (mm)
+        irrigation = self.irrigation_amounts[action]
+        
+        # Calculate crop evapotranspiration (mm/day)
         kc = self.kc_by_stage[self.crop_stage]
+        et_crop = self.current_et0 * kc
         
-        # Calculate actual ET (ETc = Kc × ET₀)
-        etc = kc * self.current_et0  # mm/day
+        # Update soil moisture (mm)
+        # Current moisture in mm
+        moisture_mm = self.soil_moisture * self.max_soil_moisture
         
-        # Get irrigation amount
-        irrigation = self.irrigation_amounts[action]  # mm/day
+        # Water balance
+        moisture_mm += irrigation + self.current_rain - et_crop
         
-        # Calculate net change in soil moisture (mm)
-        # Inputs: irrigation + rainfall
-        # Outputs: ET consumption
-        net_change = irrigation + self.current_rain - etc
+        # Clip to valid bounds [0, max_soil_moisture]
+        moisture_mm = np.clip(moisture_mm, 0.0, self.max_soil_moisture)
         
-        # Update soil moisture (as fraction)
-        self.soil_moisture += net_change / self.max_soil_moisture
+        # Convert back to normalized fraction
+        self.soil_moisture = moisture_mm / self.max_soil_moisture
         
-        # Clip to valid range [0, 1]
-        self.soil_moisture = np.clip(self.soil_moisture, 0.0, 1.0)
+        # Sample new climate for next step (using delta from current)
+        self.current_et0, self.current_rain = self._sample_climate(self.current_et0, self.current_rain)
+        
+        # Update crop stage based on time
+        self.current_step += 1
+        self.crop_stage = self._get_crop_stage(self.current_step)
     
     def _calculate_reward(self, action: int) -> float:
         """
         Calculate reward based on soil moisture state and irrigation cost.
         
         Reward structure:
-        1. Penalty for water stress (very dry soil)
-        2. Penalty for over-irrigation (waterlogged soil)
-        3. Bonus for maintaining optimal moisture
+        1. Bonus for entering or staying in optimal moisture range
+        2. Penalty for leaving optimal zone
+        3. Continuous stress penalties for sub-optimal moisture
         4. Cost for irrigation water usage
         
         Parameters
@@ -259,11 +272,11 @@ class IrrigationEnv(gym.Env):
         bottom = self.threshold_bottom_soil_moisture
         top = self.threshold_top_soil_moisture
 
-        # entering optimum 
+        # Entering optimum 
         if prev < bottom and bottom <= curr <= top:
             reward += 6
 
-        # staying in optimal 
+        # Staying in optimal 
         if bottom <= prev <= top and bottom <= curr <= top:
             reward += 2
 
@@ -271,7 +284,7 @@ class IrrigationEnv(gym.Env):
         if bottom <= prev <= top and (curr < bottom or curr > top):
             reward -= 4.0
 
-        # ---------- 2. Continuous stress penalties ----------
+        # Continuous stress penalties
         # Below optimal
         if curr < bottom:
             reward -= 5.0 * (bottom - curr)
@@ -280,11 +293,30 @@ class IrrigationEnv(gym.Env):
         if curr > top:
             reward -= 1.0 * (curr - top)
 
-        # ---------- 3. Irrigation cost ----------
+        # Irrigation cost
         irrigation_amount = self.irrigation_amounts[action]
         reward -= self.water_cost * irrigation_amount
     
         return reward
+    
+    def _get_obs(self) -> dict:
+        """
+        Get current observation in Gymnasium format.
+        
+        Returns
+        -------
+        obs : dict
+            Dictionary containing normalized state variables
+        """
+        # Normalize climate variables
+        et0_norm, rain_norm = self._normalize_climate(self.current_et0, self.current_rain)
+        
+        return {
+            "soil_moisture": np.array([self.soil_moisture], dtype=np.float32),
+            "crop_stage": self.crop_stage,
+            "rain": np.array([rain_norm], dtype=np.float32),
+            "et0": np.array([et0_norm], dtype=np.float32),
+        }
     
     def reset(self, seed=None, options=None):
         """
@@ -325,31 +357,35 @@ class IrrigationEnv(gym.Env):
         
         self.current_step = 0
         
-        # Sample initial climate conditions
+        # Sample initial climate
         self.current_et0, self.current_rain = self._sample_climate()
         
-        # Get initial observation
         observation = self._get_obs()
-        info = {}
+        info = {
+            "raw_et0": self.current_et0,
+            "raw_rain": self.current_rain,
+            "soil_moisture_mm": self.soil_moisture * self.max_soil_moisture,
+        }
+        
         self.prev_soil_moisture = self.soil_moisture
         
         return observation, info
     
     def step(self, action):
         """
-        Execute one time step in the environment.
+        Execute one timestep of the environment.
         
         Parameters
         ----------
         action : int
-            Action to take (0=no irrigation, 1=light, 2=heavy)
+            Irrigation action {0, 1, 2}
         
         Returns
         -------
         observation : dict
-            Current observation
+            Updated observation
         reward : float
-            Reward for this step
+            Reward signal based on soil moisture management
         terminated : bool
             Whether episode has ended
         truncated : bool
@@ -357,77 +393,98 @@ class IrrigationEnv(gym.Env):
         info : dict
             Additional information
         """
-        # Validate action
-        assert self.action_space.contains(action), f"Invalid action: {action}"
+        # Store previous soil moisture for reward calculation
+        self.prev_soil_moisture = self.soil_moisture
         
-        # Update step counter
-        self.current_step += 1
-        
-        # Update crop growth stage
-        self.crop_stage = self._get_crop_stage(self.current_step)
-        
-        # Store current climate conditions (before updating to tomorrow)
-        # These are the conditions that affected today's soil moisture update
-        today_et0 = self.current_et0
-        today_rain = self.current_rain
-        
-        # Update soil moisture based on action, ET, and rainfall
-        # IMPORTANT: Use CURRENT climate conditions before updating to tomorrow
-        self._update_soil_moisture(action)
-        
-        # Sample new climate conditions for tomorrow (with temporal correlation)
-        self.current_et0, self.current_rain = self._sample_climate(
-            self.current_et0, self.current_rain
-        )
-        
-        # Get observation
-        observation = self._get_obs()
+        # Update state based on action and climate
+        self._update_state(action)
         
         # Calculate reward
         reward = self._calculate_reward(action)
         
+        # Get new observation
+        observation = self._get_obs()
+        
         # Check if episode is complete
         terminated = self.current_step >= self.episode_length
-        truncated = False  # No truncation conditions
+        truncated = False
         
-        # Additional info
-        # NOTE: info contains the climate conditions that were used for TODAY's update,
-        # not tomorrow's forecast (which is in the observation)
+        # Diagnostic info
         info = {
-            "soil_moisture": self.soil_moisture,
+            "step": self.current_step,
+            "raw_et0": self.current_et0,
+            "raw_rain": self.current_rain,
+            "soil_moisture_mm": self.soil_moisture * self.max_soil_moisture,
             "crop_stage": self.crop_stage,
-            "et0": today_et0,  # ET0 that affected today's soil moisture
-            "rain": today_rain,  # Rain that affected today's soil moisture
-            "irrigation": self.irrigation_amounts[action],
         }
-        
-        self.prev_soil_moisture = self.soil_moisture
         
         return observation, reward, terminated, truncated, info
+
+
+# Example usage and sensitivity analysis
+if __name__ == "__main__":
+    print("=" * 70)
+    print("Irrigation Environment - Climate Configuration Demo")
+    print("=" * 70)
     
-    def _get_obs(self):
-        """
-        Get current observation.
-        
-        Returns
-        -------
-        observation : dict
-            Current state observation
-        """
-        # Normalize climate variables
-        et0_norm, rain_norm = self._normalize_climate(self.current_et0, self.current_rain)
-        
-        return {
-            "soil_moisture": np.array([self.soil_moisture], dtype=np.float32),
-            "crop_stage": self.crop_stage,
-            "rain": np.array([rain_norm], dtype=np.float32),
-            "et0": np.array([et0_norm], dtype=np.float32),
-        }
+    # Scenario 1: Arid climate (low rainfall, high ET₀)
+    print("\n[Scenario 1] Arid Climate")
+    print("-" * 40)
+    env_arid = IrrigationEnv(
+        max_et0=10.0,
+        max_rain=30.0,
+        et0_range=(5.0, 10.0),  # High ET₀
+        rain_range=(0.0, 5.0),   # Low rainfall
+    )
     
-    def render(self):
-        """Render environment (not implemented)."""
-        pass
+    obs, info = env_arid.reset(seed=42)
+    print(f"Initial soil moisture: {obs['soil_moisture'][0]:.3f}")
+    print(f"ET₀ (raw): {info['raw_et0']:.2f} mm/day")
+    print(f"Rain (raw): {info['raw_rain']:.2f} mm/day")
+    print(f"Crop stage: {obs['crop_stage']}")
     
-    def close(self):
-        """Clean up resources."""
-        pass
+    # Scenario 2: Humid climate (high rainfall, moderate ET₀)
+    print("\n[Scenario 2] Humid Climate")
+    print("-" * 40)
+    env_humid = IrrigationEnv(
+        max_et0=8.0,
+        max_rain=60.0,
+        et0_range=(2.0, 5.0),    # Moderate ET₀
+        rain_range=(10.0, 50.0),  # High rainfall
+    )
+    
+    obs, info = env_humid.reset(seed=42)
+    print(f"Initial soil moisture: {obs['soil_moisture'][0]:.3f}")
+    print(f"ET₀ (raw): {info['raw_et0']:.2f} mm/day")
+    print(f"Rain (raw): {info['raw_rain']:.2f} mm/day")
+    print(f"Crop stage: {obs['crop_stage']}")
+    
+    # Scenario 3: Mediterranean climate (seasonal variation)
+    print("\n[Scenario 3] Mediterranean Climate")
+    print("-" * 40)
+    env_med = IrrigationEnv(
+        max_et0=9.0,
+        max_rain=40.0,
+        et0_range=(3.0, 8.0),
+        rain_range=(0.0, 30.0),
+    )
+    
+    obs, info = env_med.reset(seed=42)
+    print(f"Initial soil moisture: {obs['soil_moisture'][0]:.3f}")
+    print(f"ET₀ (raw): {info['raw_et0']:.2f} mm/day")
+    print(f"Rain (raw): {info['raw_rain']:.2f} mm/day")
+    
+    # Run a few steps to demonstrate dynamics
+    print("\n[Simulation] 5 steps with no irrigation (action=0)")
+    print("-" * 40)
+    for step in range(5):
+        obs, reward, terminated, truncated, info = env_med.step(action=0)
+        print(f"Day {info['step']:2d} | "
+              f"SM: {obs['soil_moisture'][0]:.3f} | "
+              f"ET₀: {info['raw_et0']:.2f} mm | "
+              f"Rain: {info['raw_rain']:.2f} mm | "
+              f"Stage: {info['crop_stage']}")
+    
+    print("\n" + "=" * 70)
+    print("Environment ready for training and sensitivity analysis!")
+    print("=" * 70)

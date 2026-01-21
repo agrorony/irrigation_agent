@@ -7,7 +7,7 @@ as the state space grows through finer discretization.
 
 import numpy as np
 import matplotlib.pyplot as plt
-from irrigation_env import IrrigationEnv
+from irrigation_agent.irrigation_env import IrrigationEnv
 from irr_Qtable import train_q_learning, discretize_state, get_state_space_size
 from irr_dqn import train_dqn, evaluate_policy as evaluate_dqn
 import torch

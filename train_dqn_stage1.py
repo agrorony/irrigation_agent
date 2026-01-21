@@ -5,7 +5,7 @@ This script creates a specialized training environment that focuses on the
 flowering stage, where water stress is most critical.
 """
 
-from irrigation_env import IrrigationEnv
+from irrigation_agent.irrigation_env import IrrigationEnv
 from irr_dqn import train_dqn, run_policy_rollout, evaluate_policy
 from pathlib import Path
 import numpy as np

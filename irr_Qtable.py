@@ -16,7 +16,7 @@ Constants:
 """
 
 import numpy as np
-from irrigation_env import IrrigationEnv
+from irrigation_agent.irrigation_env import IrrigationEnv
 
 
 # ============================================================================
