@@ -21,6 +21,8 @@ import torch.nn as nn
 import torch.optim as optim
 from collections import deque
 import random
+import os
+from pathlib import Path
 
 
 # ============================================================================
@@ -240,6 +242,61 @@ class DQNAgent:
         
         # Training step counter
         self.steps = 0
+        
+        # Training statistics
+        self.total_episodes = 0
+    
+    def save(self, filepath):
+        """
+        Save DQN agent state to file.
+        
+        Parameters
+        ----------
+        filepath : str or Path
+            Path to save checkpoint
+        """
+        filepath = Path(filepath)
+        filepath.parent.mkdir(parents=True, exist_ok=True)
+        
+        checkpoint = {
+            'q_network_state_dict': self.q_network.state_dict(),
+            'target_network_state_dict': self.target_network.state_dict(),
+            'optimizer_state_dict': self.optimizer.state_dict(),
+            'steps': self.steps,
+            'total_episodes': self.total_episodes,
+            'state_dim': self.state_dim,
+            'n_actions': self.n_actions,
+            'gamma': self.gamma,
+            'batch_size': self.batch_size,
+            'target_update_freq': self.target_update_freq,
+        }
+        
+        torch.save(checkpoint, filepath)
+        print(f"Model saved to {filepath}")
+    
+    def load(self, filepath):
+        """
+        Load DQN agent state from file.
+        
+        Parameters
+        ----------
+        filepath : str or Path
+            Path to load checkpoint from
+        """
+        filepath = Path(filepath)
+        if not filepath.exists():
+            raise FileNotFoundError(f"Checkpoint not found: {filepath}")
+        
+        checkpoint = torch.load(filepath, map_location=self.device, weights_only=False)
+        
+        self.q_network.load_state_dict(checkpoint['q_network_state_dict'])
+        self.target_network.load_state_dict(checkpoint['target_network_state_dict'])
+        self.optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+        self.steps = checkpoint['steps']
+        self.total_episodes = checkpoint.get('total_episodes', 0)
+        
+        print(f"Model loaded from {filepath}")
+        print(f"Resuming from episode {self.total_episodes}, step {self.steps}")
     
     def select_action(self, state, epsilon):
         """
@@ -329,7 +386,10 @@ def train_dqn(
     batch_size=64,
     target_update_freq=100,
     hidden_size=64,
-    verbose=True
+    verbose=True,
+    save_dir="models/dqn",
+    checkpoint_freq=500,
+    load_checkpoint=None
 ):
     """
     Train DQN agent on irrigation environment.
@@ -360,6 +420,12 @@ def train_dqn(
         Size of hidden layers
     verbose : bool
         Whether to print training progress
+    save_dir : str
+        Directory to save model checkpoints
+    checkpoint_freq : int
+        Save checkpoint every N episodes
+    load_checkpoint : str, optional
+        Path to checkpoint to resume training from
     
     Returns
     -------
@@ -384,8 +450,20 @@ def train_dqn(
         hidden_size=hidden_size
     )
     
+    # Load checkpoint if specified
+    if load_checkpoint is not None:
+        agent.load(load_checkpoint)
+        start_episode = agent.total_episodes
+        # Adjust epsilon based on episodes already trained
+        epsilon = max(epsilon_end, epsilon_start * (epsilon_decay ** start_episode))
+        if verbose:
+            print(f"Resuming training from episode {start_episode}")
+            print(f"Adjusted epsilon: {epsilon:.3f}\n")
+    else:
+        start_episode = 0
+    
     # Training loop
-    epsilon = epsilon_start
+    epsilon = epsilon if load_checkpoint else epsilon_start
     episode_returns = []
     
     for episode in range(n_episodes):
@@ -418,17 +496,30 @@ def train_dqn(
         
         # Record episode return
         episode_returns. append(episode_return)
+        agent.total_episodes = start_episode + episode + 1
         
         # Print progress
         if verbose and (episode + 1) % 100 == 0:
             avg_return = np.mean(episode_returns[-100:])
-            print(f"Episode {episode + 1}/{n_episodes} | "
+            print(f"Episode {agent.total_episodes}/{start_episode + n_episodes} | "
                   f"Avg Return: {avg_return:.2f} | "
                   f"Epsilon: {epsilon:.3f}")
+        
+        # Save checkpoint
+        if checkpoint_freq > 0 and (episode + 1) % checkpoint_freq == 0:
+            checkpoint_path = Path(save_dir) / f"checkpoint_ep{agent.total_episodes}.pt"
+            agent.save(checkpoint_path)
+            if verbose:
+                print(f"  → Checkpoint saved at episode {agent.total_episodes}")
+    
+    # Save final model
+    final_path = Path(save_dir) / "dqn_final.pt"
+    agent.save(final_path)
     
     if verbose:
         print("\nTraining complete!")
         print(f"Final average return (last 100 episodes): {np.mean(episode_returns[-100:]):.2f}")
+        print(f"Final model saved to {final_path}")
     
     return agent, episode_returns
 
@@ -614,16 +705,46 @@ if __name__ == "__main__":
     print(f"Action space: {env.action_space. n}")
     print()
     
+    # Check for existing checkpoint to resume from
+    save_dir = "models/dqn"
+    latest_checkpoint = None
+    checkpoint_dir = Path(save_dir)
+    if checkpoint_dir.exists():
+        # Look for final model first
+        final_model = checkpoint_dir / "dqn_final.pt"
+        checkpoints = sorted(checkpoint_dir.glob("checkpoint_ep*.pt"))
+        
+        if final_model.exists():
+            checkpoints.append(final_model)
+        
+        if checkpoints:
+            # Get the most recent
+            latest_checkpoint = str(max(checkpoints, key=lambda p: p.stat().st_mtime))
+            print(f"Found checkpoint: {latest_checkpoint}")
+            response = input("Resume from this checkpoint? (y/n): ").strip().lower()
+            if response != 'y':
+                latest_checkpoint = None
+                print("Starting fresh training...\n")
+            else:
+                print("Continuing training from checkpoint...\n")
+        else:
+            print("No checkpoints found. Starting fresh training...\n")
+    else:
+        print("No checkpoint directory found. Starting fresh training...\n")
+    
     # Train agent
     agent, episode_returns = train_dqn(
         env=env,
-        n_episodes=1000,
+        n_episodes=10000,
         epsilon_start=1.0,
         epsilon_end=0.1,
-        epsilon_decay=0.995,
+        epsilon_decay=0.999,
         learning_rate=0.001,
         gamma=0.99,
-        verbose=True
+        verbose=True,
+        save_dir=save_dir,
+        checkpoint_freq=500,
+        load_checkpoint=latest_checkpoint
     )
     
     # Evaluate agent

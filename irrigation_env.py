@@ -366,13 +366,19 @@ class IrrigationEnv(gym.Env):
         # Update crop growth stage
         self.crop_stage = self._get_crop_stage(self.current_step)
         
-        # Sample new climate conditions (with temporal correlation)
+        # Store current climate conditions (before updating to tomorrow)
+        # These are the conditions that affected today's soil moisture update
+        today_et0 = self.current_et0
+        today_rain = self.current_rain
+        
+        # Update soil moisture based on action, ET, and rainfall
+        # IMPORTANT: Use CURRENT climate conditions before updating to tomorrow
+        self._update_soil_moisture(action)
+        
+        # Sample new climate conditions for tomorrow (with temporal correlation)
         self.current_et0, self.current_rain = self._sample_climate(
             self.current_et0, self.current_rain
         )
-        
-        # Update soil moisture based on action, ET, and rainfall
-        self._update_soil_moisture(action)
         
         # Get observation
         observation = self._get_obs()
@@ -385,11 +391,13 @@ class IrrigationEnv(gym.Env):
         truncated = False  # No truncation conditions
         
         # Additional info
+        # NOTE: info contains the climate conditions that were used for TODAY's update,
+        # not tomorrow's forecast (which is in the observation)
         info = {
             "soil_moisture": self.soil_moisture,
             "crop_stage": self.crop_stage,
-            "et0": self.current_et0,
-            "rain": self.current_rain,
+            "et0": today_et0,  # ET0 that affected today's soil moisture
+            "rain": today_rain,  # Rain that affected today's soil moisture
             "irrigation": self.irrigation_amounts[action],
         }
         
