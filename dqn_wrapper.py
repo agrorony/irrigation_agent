@@ -3,13 +3,15 @@ DQN Discrete Action Wrapper for Continuous Irrigation Environment
 ==================================================================
 
 Wraps IrrigationEnvContinuous with discrete action space for DQN training.
-Maps discrete action indices to continuous irrigation amounts.
+Maps discrete action indices to continuous irrigation amounts using linear interpolation.
 
 Action Space:
     Discrete(16): 0-15 representing irrigation amounts from 0 to 15mm
     
-Mapping:
-    irrigation_mm = action_idx * (max_irrigation / (n_actions - 1))
+Mapping (using np.linspace):
+    irrigation_mm = np.linspace(0, max_irrigation, n_actions)[action_idx]
+    Equivalent to: action_idx * (max_irrigation / (n_actions - 1))
+    
     With n_actions=16, max_irrigation=15.0:
         action 0  -> 0.0 mm
         action 1  -> 1.0 mm
