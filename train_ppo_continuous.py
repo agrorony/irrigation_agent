@@ -8,9 +8,138 @@ import argparse
 import os
 from pathlib import Path
 import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
 from stable_baselines3 import PPO
 from stable_baselines3.common.callbacks import EvalCallback, CheckpointCallback
 from ppo_env import make_irrigation_env, make_vec_env
+
+
+def plot_training_results(log_dir, save_dir, verbose=1):
+    """
+    Create summary plots of training progress.
+    
+    Parameters
+    ----------
+    log_dir : str
+        Directory containing training logs
+    save_dir : str
+        Directory to save plots
+    verbose : int
+        Verbosity level
+    """
+    if verbose > 0:
+        print("\n" + "="*80)
+        print("Creating training summary plots...")
+        print("="*80)
+    
+    try:
+        # Read evaluation results
+        eval_npz = f"{log_dir}/eval/evaluations.npz"
+        if os.path.exists(eval_npz):
+            eval_data = np.load(eval_npz)
+            timesteps = eval_data['timesteps']
+            results = eval_data['results']
+            ep_lengths = eval_data['ep_lengths']
+            
+            # Create figure with subplots
+            fig, axes = plt.subplots(2, 2, figsize=(15, 10))
+            fig.suptitle('PPO Training Summary - Continuous Irrigation', fontsize=16, fontweight='bold')
+            
+            # Plot 1: Mean Episode Reward over Time
+            ax1 = axes[0, 0]
+            mean_rewards = np.mean(results, axis=1)
+            std_rewards = np.std(results, axis=1)
+            ax1.plot(timesteps, mean_rewards, 'b-', linewidth=2, label='Mean Reward')
+            ax1.fill_between(timesteps, 
+                            mean_rewards - std_rewards, 
+                            mean_rewards + std_rewards, 
+                            alpha=0.3, color='b', label='Std Dev')
+            ax1.set_xlabel('Timesteps', fontsize=12)
+            ax1.set_ylabel('Episode Reward', fontsize=12)
+            ax1.set_title('Episode Rewards During Training', fontsize=13, fontweight='bold')
+            ax1.grid(True, alpha=0.3)
+            ax1.legend()
+            
+            # Plot 2: Episode Length over Time
+            ax2 = axes[0, 1]
+            mean_lengths = np.mean(ep_lengths, axis=1)
+            std_lengths = np.std(ep_lengths, axis=1)
+            ax2.plot(timesteps, mean_lengths, 'g-', linewidth=2, label='Mean Length')
+            ax2.fill_between(timesteps,
+                            mean_lengths - std_lengths,
+                            mean_lengths + std_lengths,
+                            alpha=0.3, color='g', label='Std Dev')
+            ax2.set_xlabel('Timesteps', fontsize=12)
+            ax2.set_ylabel('Episode Length (days)', fontsize=12)
+            ax2.set_title('Episode Length During Training', fontsize=13, fontweight='bold')
+            ax2.grid(True, alpha=0.3)
+            ax2.legend()
+            
+            # Plot 3: Reward Distribution (First vs Last Evaluation)
+            ax3 = axes[1, 0]
+            first_eval = results[0]
+            last_eval = results[-1]
+            ax3.hist(first_eval, bins=20, alpha=0.5, label=f'First Eval (t={timesteps[0]})', color='orange')
+            ax3.hist(last_eval, bins=20, alpha=0.5, label=f'Last Eval (t={timesteps[-1]})', color='purple')
+            ax3.set_xlabel('Episode Reward', fontsize=12)
+            ax3.set_ylabel('Frequency', fontsize=12)
+            ax3.set_title('Reward Distribution: First vs Last Evaluation', fontsize=13, fontweight='bold')
+            ax3.legend()
+            ax3.grid(True, alpha=0.3, axis='y')
+            
+            # Plot 4: Performance Improvement Summary
+            ax4 = axes[1, 1]
+            
+            # Calculate improvement metrics
+            initial_mean = mean_rewards[0]
+            final_mean = mean_rewards[-1]
+            best_mean = np.max(mean_rewards)
+            improvement = final_mean - initial_mean
+            best_improvement = best_mean - initial_mean
+            
+            metrics = ['Initial\nReward', 'Final\nReward', 'Best\nReward', 'Improvement\n(Final-Initial)']
+            values = [initial_mean, final_mean, best_mean, improvement]
+            colors = ['#ff7f0e', '#2ca02c', '#9467bd', '#1f77b4']
+            
+            bars = ax4.bar(metrics, values, color=colors, alpha=0.7, edgecolor='black', linewidth=1.5)
+            ax4.set_ylabel('Reward', fontsize=12)
+            ax4.set_title('Training Performance Summary', fontsize=13, fontweight='bold')
+            ax4.grid(True, alpha=0.3, axis='y')
+            ax4.axhline(y=0, color='black', linestyle='-', linewidth=0.8)
+            
+            # Add value labels on bars
+            for bar, value in zip(bars, values):
+                height = bar.get_height()
+                ax4.text(bar.get_x() + bar.get_width()/2., height,
+                        f'{value:.1f}',
+                        ha='center', va='bottom' if height > 0 else 'top',
+                        fontsize=11, fontweight='bold')
+            
+            plt.tight_layout()
+            
+            # Save plot
+            plot_path = f"{save_dir}/training_summary.png"
+            plt.savefig(plot_path, dpi=150, bbox_inches='tight')
+            
+            if verbose > 0:
+                print(f"\n✓ Training summary plot saved to: {plot_path}")
+                print(f"\nTraining Summary:")
+                print(f"  Initial mean reward: {initial_mean:.2f}")
+                print(f"  Final mean reward:   {final_mean:.2f}")
+                print(f"  Best mean reward:    {best_mean:.2f}")
+                print(f"  Improvement:         {improvement:.2f} ({improvement/abs(initial_mean)*100:.1f}%)")
+            
+            plt.close()
+            
+        else:
+            if verbose > 0:
+                print(f"⚠ Evaluation file not found: {eval_npz}")
+                print("  Plots will not be generated.")
+    
+    except Exception as e:
+        if verbose > 0:
+            print(f"⚠ Error creating plots: {e}")
 
 
 def train_ppo_continuous(
@@ -32,17 +161,18 @@ def train_ppo_continuous(
     save_dir="models/ppo_continuous",
     log_dir="logs/ppo_continuous",
     model_name=None,
+    load_model=None,
     verbose=1,
     # Environment parameters
-    max_et0=8.0,
-    max_rain=50.0,
-    et0_range=(2.0, 8.0),
-    rain_range=(0.0, 0.8),
-    max_soil_moisture=320.0,
+    max_et0=15.0,
+    max_rain=5.0,
+    et0_range=(2.0, 15.0),
+    rain_range=(0.0, 5.0),
+    max_soil_moisture=100.0,
     episode_length=90,
     threshold_bottom_soil_moisture=0.4,
     threshold_top_soil_moisture=0.7,
-    max_irrigation=30.0
+    max_irrigation=15.0
 ):
     """
     Train PPO agent on continuous irrigation environment.
@@ -85,6 +215,9 @@ def train_ppo_continuous(
         Directory to save training logs
     model_name : str, optional
         Name for saved model (if None, auto-generates based on seed and timesteps)
+    load_model : str, optional
+        Path to existing model to load and continue training from.
+        If provided, loads the model instead of creating a new one.
     verbose : int
         Verbosity level (0=none, 1=info, 2=debug)
     max_et0, max_rain, et0_range, rain_range, max_soil_moisture, episode_length,
@@ -190,27 +323,45 @@ def train_ppo_continuous(
         verbose=verbose
     )
     
-    # Initialize PPO model
-    if verbose > 0:
-        print("\nInitializing PPO model with MultiInputPolicy...")
-    
-    model = PPO(
-        "MultiInputPolicy",  # Required for Dict observation space
-        env,
-        learning_rate=learning_rate,
-        n_steps=n_steps,
-        batch_size=batch_size,
-        n_epochs=n_epochs,
-        gamma=gamma,
-        gae_lambda=gae_lambda,
-        clip_range=clip_range,
-        ent_coef=ent_coef,  # Important for continuous action exploration
-        vf_coef=vf_coef,
-        max_grad_norm=max_grad_norm,
-        seed=seed,
-        verbose=verbose,
-        tensorboard_log=log_dir
-    )
+    # Initialize or load PPO model
+    if load_model is not None:
+        if verbose > 0:
+            print(f"\nLoading existing model from: {load_model}")
+        
+        if not os.path.exists(load_model):
+            raise FileNotFoundError(f"Model file not found: {load_model}")
+        
+        model = PPO.load(
+            load_model,
+            env=env,
+            tensorboard_log=log_dir,
+            verbose=verbose
+        )
+        
+        if verbose > 0:
+            print("✓ Model loaded successfully")
+            print("  Continuing training from existing model...")
+    else:
+        if verbose > 0:
+            print("\nInitializing new PPO model with MultiInputPolicy...")
+        
+        model = PPO(
+            "MultiInputPolicy",  # Required for Dict observation space
+            env,
+            learning_rate=learning_rate,
+            n_steps=n_steps,
+            batch_size=batch_size,
+            n_epochs=n_epochs,
+            gamma=gamma,
+            gae_lambda=gae_lambda,
+            clip_range=clip_range,
+            ent_coef=ent_coef,  # Important for continuous action exploration
+            vf_coef=vf_coef,
+            max_grad_norm=max_grad_norm,
+            seed=seed,
+            verbose=verbose,
+            tensorboard_log=log_dir
+        )
     
     # Train model
     if verbose > 0:
@@ -240,6 +391,9 @@ def train_ppo_continuous(
         print(f"  tensorboard --logdir {log_dir}")
         print("="*80)
     
+    # Generate training summary plots
+    plot_training_results(log_dir, save_dir, verbose=verbose)
+    
     return model, save_path
 
 
@@ -250,7 +404,7 @@ if __name__ == "__main__":
     )
     
     # Training parameters
-    parser.add_argument("--timesteps", type=int, default=200000,
+    parser.add_argument("--timesteps", type=int, default=400000,
                         help="Total timesteps for training")
     parser.add_argument("--seed", type=int, default=42,
                         help="Random seed")
@@ -282,17 +436,19 @@ if __name__ == "__main__":
                         help="Directory to save logs")
     parser.add_argument("--model-name", type=str, default=None,
                         help="Name for saved model")
+    parser.add_argument("--load-model", type=str, default=None,
+                        help="Path to existing model to load and continue training (e.g., models/ppo_continuous/best_model/best_model.zip)")
     
     # Environment parameters
-    parser.add_argument("--max-et0", type=float, default=8.0,
+    parser.add_argument("--max-et0", type=float, default=15.0,
                         help="Maximum ET0 (mm/day)")
-    parser.add_argument("--max-rain", type=float, default=50.0,
+    parser.add_argument("--max-rain", type=float, default=5.0,
                         help="Maximum rainfall (mm/day)")
     parser.add_argument("--episode-length", type=int, default=90,
                         help="Episode length (days)")
-    parser.add_argument("--max-soil-moisture", type=float, default=320.0,
+    parser.add_argument("--max-soil-moisture", type=float, default=100.0,
                         help="Maximum soil moisture capacity (mm)")
-    parser.add_argument("--max-irrigation", type=float, default=30.0,
+    parser.add_argument("--max-irrigation", type=float, default=15.0,
                         help="Maximum irrigation amount (mm)")
     
     # Verbosity
@@ -300,6 +456,17 @@ if __name__ == "__main__":
                         help="Verbosity level (0=none, 1=info, 2=debug)")
     
     args = parser.parse_args()
+    
+    # Interactive prompt for loading existing model (if not specified in args)
+    if args.load_model is None and args.verbose > 0:
+        response = input("\nLoad existing model? (y/N): ").strip().lower()
+        if response in ['y', 'yes']:
+            model_path = input("Enter model path (e.g., models/ppo_continuous/best_model/best_model.zip): ").strip()
+            if model_path and os.path.exists(model_path):
+                args.load_model = model_path
+            elif model_path:
+                print(f"⚠ Model file not found: {model_path}")
+                print("Continuing with new model...")
     
     # Train model
     model, save_path = train_ppo_continuous(
@@ -317,6 +484,7 @@ if __name__ == "__main__":
         save_dir=args.save_dir,
         log_dir=args.log_dir,
         model_name=args.model_name,
+        load_model=args.load_model,
         verbose=args.verbose,
         max_et0=args.max_et0,
         max_rain=args.max_rain,

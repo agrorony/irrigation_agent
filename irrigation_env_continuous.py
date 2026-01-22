@@ -83,7 +83,7 @@ class IrrigationEnvContinuous(IrrigationEnv):
             Irrigation amount in mm (already clipped to [0, max_irrigation])
         """
         # Calculate crop evapotranspiration (mm/day)
-        kc = self.kc_by_stage[self.crop_stage]
+        kc =1
         et_crop = self.current_et0 * kc
         
         # Current moisture in mm
@@ -111,11 +111,25 @@ class IrrigationEnvContinuous(IrrigationEnv):
         """
         Calculate reward with continuous irrigation cost.
         
-        Uses same reward structure as parent class:
-        - Bonus for entering/staying in optimal range [threshold_bottom, threshold_top]
-        - Penalty for leaving optimal zone
-        - Continuous stress penalties
-        - Cost proportional to irrigation amount
+        OLD PROBLEM (why PPO collapsed to zero irrigation):
+        ------------------------------------------------------
+        - Unconditional linear cost: reward -= water_cost * irrigation_mm
+        - This created a STRICTLY NEGATIVE gradient ∂r/∂irrigation = -water_cost
+        - Even when soil was critically dry (prev << bottom), irrigating was immediately penalized
+        - PPO's gradient-based optimization found a stable local optimum at irrigation ≈ 0
+        - The delayed positive rewards (entering optimal zone) couldn't overcome the immediate negative gradient
+        
+        NEW DESIGN (state-dependent cost creates positive gradient when dry):
+        ----------------------------------------------------------------------
+        - Irrigation cost is now STATE-DEPENDENT based on prev_soil_moisture:
+            * When prev < bottom (DRY):   REWARD irrigation → POSITIVE gradient
+            * When prev in [bottom, top]: Small quadratic cost → smooth gradient
+            * When prev > top (WET):      Strong penalty → negative gradient
+        
+        - Key insight: When soil is dry, irrigation benefit > cost
+        - For prev < bottom, ∂r/∂irrigation > 0, so PPO learns to irrigate
+        - For prev ≥ bottom, ∂r/∂irrigation < 0, so PPO learns to conserve
+        - This removes the zero-irrigation trap while maintaining water efficiency
         
         Parameters
         ----------
@@ -154,8 +168,30 @@ class IrrigationEnvContinuous(IrrigationEnv):
         if curr > top:
             reward -= 1.0 * (curr - top)
         
-        # Irrigation cost (continuous, not discrete)
-        reward -= self.water_cost * irrigation_mm
+        # STATE-DEPENDENT irrigation cost (REPLACES old unconditional penalty)
+        # ---------------------------------------------------------------------
+        # Signal amplification factor for dry-state irrigation benefit
+        # This scaling increases PPO signal-to-noise; logic unchanged.
+        DRY_REWARD_SCALE = 8.0
+        
+        if prev < bottom:
+            # When starting DRY: REWARD irrigation proportional to deficit
+            # Creates POSITIVE gradient: ∂r/∂irrigation > 0
+            # The worse the deficit, the more valuable irrigation becomes
+            water_deficit = bottom - prev
+            irrigation_benefit = self.water_cost * irrigation_mm * min(water_deficit * 3.0, 1.0)
+            reward += DRY_REWARD_SCALE * irrigation_benefit
+            
+        elif bottom <= prev <= top:
+            # When starting in OPTIMAL: gentle quadratic cost
+            # ∂r/∂irrigation = -k * irrigation (smooth, grows with amount)
+            # Gradient is small near zero, discourages over-irrigation without creating trap
+            reward -= 0.5 * self.water_cost * (irrigation_mm ** 2) / self.max_irrigation
+            
+        else:  # prev > top
+            # When starting TOO WET: strong linear penalty (irrigation is wasteful)
+            # ∂r/∂irrigation = -3 * water_cost (strong negative gradient)
+            reward -= 3.0 * self.water_cost * irrigation_mm
         
         return reward
     
