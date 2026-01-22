@@ -61,7 +61,7 @@ def plot_evaluation_results(results, save_path="logs/dqn_discrete/evaluation_per
     
     # Plot 3: Action Distribution
     ax3 = axes[1, 0]
-    categories = ['Zero\n(0mm)', 'Light\n(1-4mm)', 'Medium\n(5-9mm)', 'Heavy\n(10-15mm)']
+    categories = ['Zero\n(<0.1mm)', 'Light\n(0.1-10mm)', 'Medium\n(10-15mm)', 'Heavy\n(≥15mm)']
     percentages = [results['zero_pct'], results['light_pct'], results['medium_pct'], results['heavy_pct']]
     colors_action = ['#d62728', '#ff7f0e', '#2ca02c', '#1f77b4']
     bars = ax3.bar(categories, percentages, color=colors_action, alpha=0.7, edgecolor='black', linewidth=1.5)
@@ -320,10 +320,11 @@ def evaluate_dqn_policy(
     actions_array = np.array(all_actions)
     
     # Action distribution (matching PPO evaluation categories)
-    zero_actions = np.sum(actions_array == 0.0)  # Exactly 0mm
-    light_actions = np.sum((actions_array >= 1.0) & (actions_array <= 4.0))  # 1-4mm
-    medium_actions = np.sum((actions_array >= 5.0) & (actions_array <= 9.0))  # 5-9mm
-    heavy_actions = np.sum(actions_array >= 10.0)  # 10-15mm
+    # Note: DQN max is 15mm, so categories adjusted accordingly
+    zero_actions = np.sum(actions_array < 0.1)  # <0.1mm (essentially 0)
+    light_actions = np.sum((actions_array >= 0.1) & (actions_array < 10.0))  # 0.1-10mm
+    medium_actions = np.sum((actions_array >= 10.0) & (actions_array < 15.0))  # 10-15mm
+    heavy_actions = np.sum(actions_array >= 15.0)  # >=15mm
     
     total_actions = len(actions_array)
     zero_pct = 100.0 * zero_actions / total_actions
@@ -349,10 +350,10 @@ def evaluate_dqn_policy(
         print(f"  Mean ± Std:        {irrigation_mean:.2f} ± {irrigation_std:.2f}")
         print()
         print("Action Distribution:")
-        print(f"  Zero (0mm):        {zero_pct:.1f}% of steps")
-        print(f"  Light (1-4mm):     {light_pct:.1f}% of steps")
-        print(f"  Medium (5-9mm):    {medium_pct:.1f}% of steps")
-        print(f"  Heavy (10-15mm):   {heavy_pct:.1f}% of steps")
+        print(f"  Zero (<0.1mm):     {zero_pct:.1f}% of steps")
+        print(f"  Light (0.1-10mm):  {light_pct:.1f}% of steps")
+        print(f"  Medium (10-15mm):  {medium_pct:.1f}% of steps")
+        print(f"  Heavy (≥15mm):     {heavy_pct:.1f}% of steps")
         print()
         print("Soil Moisture Performance:")
         print(f"  Time in optimal range [0.4, 0.7]: {optimal_pct:.1f}%")
