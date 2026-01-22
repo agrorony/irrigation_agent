@@ -51,8 +51,12 @@ class DiscreteActionWrapper(gym.ActionWrapper):
         self.action_values = np.linspace(
             0.0, 
             self.max_irrigation, 
-            n_actions
+            n_actions,
+            dtype=np.float32
         )
+        
+        # Pre-compute action arrays to avoid repeated array creation
+        self.action_arrays = [np.array([val], dtype=np.float32) for val in self.action_values]
     
     def action(self, action_idx):
         """
@@ -68,11 +72,8 @@ class DiscreteActionWrapper(gym.ActionWrapper):
         irrigation_mm : np.ndarray
             Continuous irrigation amount as array for env.step()
         """
-        # Map action index to irrigation amount
-        irrigation_mm = self.action_values[action_idx]
-        
-        # Return as array for continuous environment
-        return np.array([irrigation_mm], dtype=np.float32)
+        # Return pre-computed action array for efficiency
+        return self.action_arrays[action_idx]
 
 
 def make_discretized_env(

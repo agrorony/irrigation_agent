@@ -15,6 +15,8 @@ from pathlib import Path
 import numpy as np
 import matplotlib.pyplot as plt
 import time
+import random
+import torch
 from dqn_wrapper import make_discretized_env
 from dqn_agent import DQNAgent
 
@@ -220,9 +222,7 @@ def train_dqn_discrete(
     
     # Set random seeds
     np.random.seed(seed)
-    import random
     random.seed(seed)
-    import torch
     torch.manual_seed(seed)
     
     # Print configuration
@@ -371,12 +371,12 @@ def train_dqn_discrete(
         print(f"Model saved to: {save_path}")
         print("="*80)
     
-    # Generate training summary plots
+    # Generate training summary plots (save to log_dir)
     plot_training_results(
         episode_rewards,
         episode_steps,
         episode_irrigations,
-        save_dir=save_dir,
+        save_dir=log_dir,
         verbose=verbose
     )
     

@@ -13,6 +13,7 @@ import argparse
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
+import torch
 from pathlib import Path
 from dqn_wrapper import make_discretized_env
 from dqn_agent import DQNAgent
@@ -61,7 +62,7 @@ def plot_evaluation_results(results, save_path="logs/dqn_discrete/evaluation_per
     
     # Plot 3: Action Distribution
     ax3 = axes[1, 0]
-    categories = ['Zero\n(<0.1mm)', 'Light\n(0.1-10mm)', 'Medium\n(10-15mm)', 'Heavy\n(≥15mm)']
+    categories = ['Zero\n(<0.1mm)', 'Light\n(0.1-7.5mm)', 'Medium\n(7.5-15mm)', 'Heavy\n(>15mm)']
     percentages = [results['zero_pct'], results['light_pct'], results['medium_pct'], results['heavy_pct']]
     colors_action = ['#d62728', '#ff7f0e', '#2ca02c', '#1f77b4']
     bars = ax3.bar(categories, percentages, color=colors_action, alpha=0.7, edgecolor='black', linewidth=1.5)
@@ -320,11 +321,13 @@ def evaluate_dqn_policy(
     actions_array = np.array(all_actions)
     
     # Action distribution (matching PPO evaluation categories)
-    # Note: DQN max is 15mm, so categories adjusted accordingly
+    # Note: DQN max is 15mm, adjusted to align with PPO's relative categorization
+    # For DQN: 0-15mm range -> zero (<0.1), light (0.1-7.5), medium (7.5-15), heavy (>15, none)
+    # This maintains the spirit of PPO's zero/light/medium/heavy while respecting DQN's max
     zero_actions = np.sum(actions_array < 0.1)  # <0.1mm (essentially 0)
-    light_actions = np.sum((actions_array >= 0.1) & (actions_array < 10.0))  # 0.1-10mm
-    medium_actions = np.sum((actions_array >= 10.0) & (actions_array < 15.0))  # 10-15mm
-    heavy_actions = np.sum(actions_array >= 15.0)  # >=15mm
+    light_actions = np.sum((actions_array >= 0.1) & (actions_array < 7.5))  # 0.1-7.5mm
+    medium_actions = np.sum((actions_array >= 7.5) & (actions_array <= 15.0))  # 7.5-15mm
+    heavy_actions = np.sum(actions_array > 15.0)  # >15mm (should be 0 for DQN)
     
     total_actions = len(actions_array)
     zero_pct = 100.0 * zero_actions / total_actions
@@ -351,9 +354,9 @@ def evaluate_dqn_policy(
         print()
         print("Action Distribution:")
         print(f"  Zero (<0.1mm):     {zero_pct:.1f}% of steps")
-        print(f"  Light (0.1-10mm):  {light_pct:.1f}% of steps")
-        print(f"  Medium (10-15mm):  {medium_pct:.1f}% of steps")
-        print(f"  Heavy (≥15mm):     {heavy_pct:.1f}% of steps")
+        print(f"  Light (0.1-7.5mm): {light_pct:.1f}% of steps")
+        print(f"  Medium (7.5-15mm): {medium_pct:.1f}% of steps")
+        print(f"  Heavy (>15mm):     {heavy_pct:.1f}% of steps")
         print()
         print("Soil Moisture Performance:")
         print(f"  Time in optimal range [0.4, 0.7]: {optimal_pct:.1f}%")
@@ -447,7 +450,6 @@ if __name__ == "__main__":
     
     # Load agent
     try:
-        import torch
         device = 'cuda' if torch.cuda.is_available() else 'cpu'
         agent = DQNAgent(
             state_dim=6,
