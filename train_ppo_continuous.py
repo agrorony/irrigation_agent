@@ -164,9 +164,9 @@ def train_ppo_continuous(
     load_model=None,
     verbose=1,
     # Environment parameters
-    max_et0=15.0,
+    max_et0=10.0,
     max_rain=5.0,
-    et0_range=(2.0, 15.0),
+    et0_range=(2.0, 10.0),
     rain_range=(0.0, 5.0),
     max_soil_moisture=100.0,
     episode_length=90,
@@ -440,7 +440,7 @@ if __name__ == "__main__":
                         help="Path to existing model to load and continue training (e.g., models/ppo_continuous/best_model/best_model.zip)")
     
     # Environment parameters
-    parser.add_argument("--max-et0", type=float, default=15.0,
+    parser.add_argument("--max-et0", type=float, default=10.0,
                         help="Maximum ET0 (mm/day)")
     parser.add_argument("--max-rain", type=float, default=5.0,
                         help="Maximum rainfall (mm/day)")
