@@ -271,8 +271,11 @@ def train_dqn_discrete(
     if verbose > 0:
         print(f"\nUsing device: {device}")
     
+    # State dimension: soil_moisture(1) + crop_stage_onehot(3) + rain(1) + et0(1) = 6
+    STATE_DIM = 6
+    
     agent = DQNAgent(
-        state_dim=6,  # soil_moisture(1) + crop_stage_onehot(3) + rain(1) + et0(1)
+        state_dim=STATE_DIM,
         n_actions=n_actions,
         learning_rate=learning_rate,
         gamma=gamma,

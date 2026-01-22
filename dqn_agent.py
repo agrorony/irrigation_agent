@@ -223,12 +223,17 @@ class DQNAgent:
         """
         Convert Dict observation to flattened state vector.
         
+        The environment's observation space has crop_stage as a Discrete(3) space,
+        meaning it's returned as an integer (0, 1, or 2) rather than an array.
+        This is consistent with Gymnasium's design where Discrete spaces return scalars.
+        We one-hot encode it here for the neural network input.
+        
         Parameters
         ----------
         obs : dict
             Observation from environment with keys:
             - 'soil_moisture': array([value])
-            - 'crop_stage': int (0, 1, or 2)
+            - 'crop_stage': int (0, 1, or 2) - Discrete space returns scalar
             - 'rain': array([value])
             - 'et0': array([value])
         

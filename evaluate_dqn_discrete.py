@@ -60,7 +60,7 @@ def plot_evaluation_results(results, save_path="evaluation_plots.png"):
     
     # Plot 3: Action Distribution
     ax3 = axes[1, 0]
-    categories = ['Zero\n(<0.1mm)', 'Light\n(0.1-5mm)', 'Medium\n(5-10mm)', 'Heavy\n(≥10mm)']
+    categories = ['Zero\n(<0.1mm)', 'Light\n(0.1-10mm)', 'Medium\n(10-20mm)', 'Heavy\n(≥20mm)']
     percentages = [results['zero_pct'], results['light_pct'], 
                    results['medium_pct'], results['heavy_pct']]
     colors_action = ['#d62728', '#ff7f0e', '#2ca02c', '#1f77b4']
@@ -272,8 +272,10 @@ def evaluate_dqn_policy(
             
             # Track metrics
             episode_reward += reward
-            # Action is discrete index, which maps directly to mm
-            episode_irrigation += action
+            # Get actual irrigation amount from action mapping
+            # For default wrapper: action index directly maps to mm (0->0mm, 1->1mm, ..., 15->15mm)
+            irrigation_mm = action  # Since action_map = [0, 1, 2, ..., 15] by default
+            episode_irrigation += irrigation_mm
             episode_actions.append(action)
             
             # Soil moisture tracking
@@ -323,9 +325,9 @@ def evaluate_dqn_policy(
     
     # Action distribution
     zero_actions = np.sum(actions_array < 0.1)
-    light_actions = np.sum((actions_array >= 0.1) & (actions_array < 5.0))
-    medium_actions = np.sum((actions_array >= 5.0) & (actions_array < 10.0))
-    heavy_actions = np.sum(actions_array >= 10.0)
+    light_actions = np.sum((actions_array >= 0.1) & (actions_array < 10.0))
+    medium_actions = np.sum((actions_array >= 10.0) & (actions_array < 20.0))
+    heavy_actions = np.sum(actions_array >= 20.0)
     
     zero_pct = 100.0 * zero_actions / len(actions_array)
     light_pct = 100.0 * light_actions / len(actions_array)
@@ -354,9 +356,9 @@ def evaluate_dqn_policy(
         print()
         print("Action Distribution:")
         print(f"  Zero irrigation:   {zero_pct:.1f}% of steps")
-        print(f"  Light (0.1-5mm):   {light_pct:.1f}% of steps")
-        print(f"  Medium (5-10mm):   {medium_pct:.1f}% of steps")
-        print(f"  Heavy (≥10mm):     {heavy_pct:.1f}% of steps")
+        print(f"  Light (0.1-10mm):  {light_pct:.1f}% of steps")
+        print(f"  Medium (10-20mm):  {medium_pct:.1f}% of steps")
+        print(f"  Heavy (≥20mm):     {heavy_pct:.1f}% of steps")
         print()
         print("Soil Moisture Performance:")
         print(f"  Time in optimal range [0.4, 0.7]: {optimal_pct:.1f}%")
@@ -476,8 +478,12 @@ if __name__ == "__main__":
     
     # Load agent
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
+    
+    # State dimension: soil_moisture(1) + crop_stage_onehot(3) + rain(1) + et0(1) = 6
+    STATE_DIM = 6
+    
     agent = DQNAgent(
-        state_dim=6,
+        state_dim=STATE_DIM,
         n_actions=args.n_actions,
         device=device
     )
