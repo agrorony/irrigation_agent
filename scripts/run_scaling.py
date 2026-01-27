@@ -5,11 +5,14 @@ Demonstrates how DQN scales better than tabular Q-learning
 as the state space grows through finer discretization.
 """
 
+import sys
+sys.path.insert(0, '.')
+
 import numpy as np
 import matplotlib.pyplot as plt
-from irrigation_agent.irrigation_env import IrrigationEnv
-from irr_Qtable import train_q_learning, discretize_state, get_state_space_size
-from irr_dqn import train_dqn, evaluate_policy as evaluate_dqn
+from src.envs.irrigation_env import IrrigationEnv
+from src.agents.qtable import train_q_learning, discretize_state, get_state_space_size
+from src.agents.dqn import train_dqn, evaluate_policy as evaluate_dqn
 import torch
 
 

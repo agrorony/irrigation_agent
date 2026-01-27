@@ -6,13 +6,15 @@ Trains PPO agent on IrrigationEnvContinuous with continuous irrigation amounts [
 
 import argparse
 import os
+import sys
+sys.path.insert(0, '.')
 from pathlib import Path
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 from stable_baselines3 import PPO
 from stable_baselines3.common.callbacks import EvalCallback, CheckpointCallback
-from ppo_env import make_irrigation_env, make_vec_env
+from src.envs.wrappers import make_irrigation_env, make_vec_env
 
 
 def plot_training_results(log_dir, save_dir, verbose=1):

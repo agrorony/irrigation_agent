@@ -6,7 +6,7 @@ Runs detailed step-by-step rollouts of trained PPO policies for inspection and d
 
 import numpy as np
 from stable_baselines3 import PPO
-from ppo_env import make_irrigation_env
+from src.envs.wrappers import make_irrigation_env
 
 
 def run_ppo_rollout(model, env, seed=None, max_steps=None, verbose=True):

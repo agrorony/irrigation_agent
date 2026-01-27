@@ -11,14 +11,16 @@ Usage:
 
 import argparse
 import os
+import sys
+sys.path.insert(0, '.')
 from pathlib import Path
 import numpy as np
 import matplotlib.pyplot as plt
 import time
 import random
 import torch
-from dqn_wrapper import make_discretized_env
-from dqn_agent import DQNAgent
+from src.envs.wrappers import make_discretized_env
+from src.agents.dqn import DQNAgent
 
 
 def plot_training_results(

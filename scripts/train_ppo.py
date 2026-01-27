@@ -6,11 +6,13 @@ Trains a PPO agent using stable-baselines3 on the IrrigationEnv.
 
 import argparse
 import os
+import sys
+sys.path.insert(0, '.')
 from pathlib import Path
 import numpy as np
 from stable_baselines3 import PPO
 from stable_baselines3.common.callbacks import EvalCallback, CheckpointCallback
-from ppo_env import make_irrigation_env, make_vec_env
+from src.envs.wrappers import make_irrigation_env, make_vec_env
 
 
 def train_ppo(
