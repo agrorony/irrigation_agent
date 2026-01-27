@@ -27,7 +27,7 @@ if __name__ == "__main__":
 
     # Train Q-learning agent
     print("Training Q-learning agent...")
-    Q = train_q_learning(env, n_episodes=1000, alpha=0.1, gamma=0.99)
+    Q, epsilon = train_q_learning(env, n_episodes=1000, alpha=0.1, gamma=0.99)
 
     # Extract and display policy
     policy = extract_policy(Q)
